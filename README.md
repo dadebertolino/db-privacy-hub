@@ -122,6 +122,66 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 ### Changelog
 
+#### 1.3.0 — Registro consensi unificato + version ID Privacy Policy _(2026)_
+
+Estensione che chiude il cerchio dell'accountability: ogni consenso espresso sul sito (banner cookie, checkbox form, futuri eventi) viene linkato alla versione esatta della Privacy Policy in vigore al momento, e visibile in una vista unificata.
+
+**Filter pubblico `dbph_consents_register`:**
+- I plugin DB compatibili dichiarano la propria fonte di consensi via filter. L'Hub aggrega automaticamente tutte le fonti in `Privacy → Registro consensi`. Pattern coerente con `dbph_processing_register` per i trattamenti e `dbph_user_data_exporters` per le DSAR.
+- Contratto: ogni fonte fornisce callback `count`, `query`, `export`. La pagina admin chiama `query_all()` per la vista unificata (merge cronologico) o `query_for($key)` per una singola fonte.
+
+**Nuova pagina admin `Privacy → Registro consensi`:**
+- Vista cronologica unificata: cookie, form, futuri eventi.
+- Filtri: data range, identificativo (testo libero su email mascherata), fonte specifica.
+- Card riepilogativa: totale per ogni fonte.
+- Export CSV completo (BOM UTF-8 per Excel italiano), rispetta i filtri attivi.
+- Limite di 200 righe in vista (per performance), nessun limite nell'export.
+
+**API `DBPH_Policy_Archive::get_current_version_id()`:**
+- Restituisce l'ID dello snapshot Privacy Policy attualmente in vigore.
+- Letto da Cookie Manager 3.2.0+ e Form Builder 2.11.0+ al momento del consenso, per linkare la riga di consenso al documento esatto che l'utente leggeva.
+- Cache via option `dbph_policy_current_version` aggiornata automaticamente ad ogni `save()` di snapshot.
+- Restituisce `0` se nessuna policy pubblicata: i plugin trattano questo caso come "policy non disponibile al momento".
+
+**Compatibilità retroattiva:**
+- Nessun breaking change. Il filter è opt-in dai plugin compatibili.
+- Senza Cookie Manager 3.2.0+ né Form Builder 2.11.0+, la pagina mostra un messaggio informativo che indica come popolarla.
+- Le righe pre-1.3.0 in `wp_dbcm_consent_log` (Cookie Manager) e nelle submission Form Builder non sono visibili nel Registro consensi: solo quelle generate dopo l'aggiornamento dei rispettivi plugin.
+
+#### 1.2.0 — Suite accountability avanzata _(2026)_
+
+Estensione completa del registro DSAR per coprire tutti gli scenari di accountability previsti dal GDPR (art. 5.2), incluse le richieste arrivate fuori dal flusso WordPress nativo.
+
+**Registrazione manuale richieste DSAR (`Privacy → Registra DSAR manuale`):**
+- Nuova pagina admin per registrare richieste arrivate via email, PEC, raccomandata o altri canali esterni a WordPress.
+- Supporta tutti gli 8 diritti GDPR: accesso (art. 15), rettifica (art. 16), cancellazione (art. 17), limitazione (art. 18), portabilità (art. 20), opposizione (art. 21), no decisioni automatizzate (art. 22), revoca consenso (art. 7.3).
+- Campi: tipo richiesta, identificativo utente (memorizzato mascherato + hash SHA-256), canale di ricezione, data ricezione, descrizione, stato, data completamento, note operative.
+- Le richieste manuali sono modificabili ed eliminabili dall'admin (a differenza di quelle WP native che sono read-only).
+
+**Tracking richieste WP non confermate:**
+- Le richieste DSAR avviate via `Strumenti → Esporta/Cancella dati personali` ora vengono registrate **al momento dell'invio dell'email di conferma**, non solo dopo il click di conferma. Lo stato iniziale è `pending`, passa a `confirmed` quando l'utente clicca il link.
+- Cron giornaliero `dbph_dsar_cleanup_pending` che marca come `expired` le richieste pending da più di 7 giorni (per evitare accumulo di richieste mai confermate).
+
+**Promemoria scadenze GDPR (art. 12.3):**
+- Lo Storico DSAR mostra una colonna "Scadenza GDPR" con codice colore: verde > 10 giorni, arancione 1-10 giorni, rosso scaduta. Calcolo basato su `requested_at + 30 giorni`.
+- Statistiche aggregate "in scadenza" e "scadute" mostrate nella card riepilogativa.
+- Le righe scadute sono evidenziate con sfondo rosa nella tabella.
+
+**Export CSV registro DSAR:**
+- Nuovo bottone "Esporta CSV" nello Storico DSAR. Esporta fino a 5000 righe con BOM UTF-8 (apertura corretta in Excel italiano).
+- Colonne: ID, fonte, email mascherata, hash, tipo, stato, canale, date, scadenza in giorni, descrizione, note.
+- Utile per produrre il registro al Garante in caso di ispezione.
+
+**Sezione "Esercita i tuoi diritti" nella Privacy Policy:**
+- Nuovo toggle nel form titolare "Includi istruzioni operative" (default ON).
+- Quando attivo, la Privacy Policy generata include un blocco passo passo che spiega all'utente come esercitare concretamente i propri diritti: identificazione del diritto, modalità di invio della richiesta, contenuti utili, tempi di risposta del titolare (1 mese ex art. 12.3), gratuità dell'esercizio, diritto di reclamo al Garante (link a www.gpdp.it).
+
+**Schema DB:**
+- Migrazione automatica `dbph_dsar_log` 1.0 → 2.0: nuove colonne `source` (wp_native/manual/consent_revoked), `channel`, `description`, nuovo indice su `requested_at`. Le righe pre-esistenti sono migrate automaticamente come `source = wp_native`.
+
+**Compatibilità retroattiva:**
+- Nessun breaking change. Tutte le funzionalità preesistenti continuano a funzionare. Plugin che producono richieste DSAR via filter `wp_privacy_personal_data_*` (Form Builder, Cookie Manager) non richiedono modifiche.
+
 #### 1.1.2 — Selettore pagina di destinazione _(2026)_
 - Nella pagina `Privacy → Genera Privacy Policy` un nuovo dropdown permette di scegliere se creare una nuova pagina WordPress oppure **sovrascrivere il contenuto di una pagina esistente**. Il dropdown è popolato automaticamente con le pagine i cui titoli contengono "privacy", "informativa", "cookie", "gdpr", più la pagina già impostata come privacy policy core di WordPress
 - L'overwrite preserva titolo e slug della pagina esistente, modifica solo il `post_content`

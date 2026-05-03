@@ -33,6 +33,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 		const PAGE_RESPONSABILI = 'dbph-responsabili';
 		const PAGE_DSAR_LOG     = 'dbph-dsar-log';
+		const PAGE_DSAR_NEW     = 'dbph-dsar-new';
+		const PAGE_CONSENTS     = 'dbph-consents';
 		const PAGE_POLICY_HIST  = 'dbph-policy-history';
 
 		public static function init() {
@@ -47,6 +49,12 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			add_action( 'admin_post_dbph_create_page',         array( __CLASS__, 'handle_create_page' ) );
 			add_action( 'admin_post_dbph_download_md',         array( __CLASS__, 'handle_download_md' ) );
 			add_action( 'admin_post_dbph_save_responsabili',   array( __CLASS__, 'handle_save_responsabili' ) );
+			// 1.2.0: handler per DSAR manuali ed export CSV.
+			add_action( 'admin_post_dbph_save_manual_dsar',    array( __CLASS__, 'handle_save_manual_dsar' ) );
+			add_action( 'admin_post_dbph_delete_manual_dsar',  array( __CLASS__, 'handle_delete_manual_dsar' ) );
+			add_action( 'admin_post_dbph_export_dsar_csv',     array( __CLASS__, 'handle_export_dsar_csv' ) );
+			// 1.3.0: handler per export Registro consensi
+			add_action( 'admin_post_dbph_export_consents_csv', array( __CLASS__, 'handle_export_consents_csv' ) );
 
 			add_action( 'admin_notices',                       array( __CLASS__, 'admin_notices' ) );
 		}
@@ -100,6 +108,26 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'manage_options',
 				self::PAGE_DSAR_LOG,
 				array( __CLASS__, 'render_dsar_log' )
+			);
+
+			// 1.2.0: registrazione DSAR manuale (richieste arrivate via email/PEC).
+			add_submenu_page(
+				self::MENU_SLUG,
+				__( 'Registra DSAR manuale', 'db-privacy-hub' ),
+				__( 'Registra DSAR manuale', 'db-privacy-hub' ),
+				'manage_options',
+				self::PAGE_DSAR_NEW,
+				array( __CLASS__, 'render_dsar_manual_form' )
+			);
+
+			// 1.3.0: Registro consensi unificato (cookie + form + future fonti).
+			add_submenu_page(
+				self::MENU_SLUG,
+				__( 'Registro consensi', 'db-privacy-hub' ),
+				__( 'Registro consensi', 'db-privacy-hub' ),
+				'manage_options',
+				self::PAGE_CONSENTS,
+				array( __CLASS__, 'render_consents_register' )
 			);
 
 			add_submenu_page(
@@ -319,6 +347,19 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 								<label for="dbph_page_slug"><?php esc_html_e( 'Slug URL', 'db-privacy-hub' ); ?></label>
 								<input type="text" id="dbph_page_slug" name="dbph[page_slug]" value="<?php echo esc_attr( $page_slug ); ?>" class="regular-text">
 								<p class="description"><?php esc_html_e( 'L\'URL finale sarà:', 'db-privacy-hub' ); ?> <code><?php echo esc_html( home_url( '/' ) ); ?><span id="dbph-slug-preview"><?php echo esc_html( $page_slug ); ?></span>/</code></p>
+							</div>
+							<?php
+							// 1.2.0: toggle "Mostra istruzioni operative diritti"
+							$show_howto = get_option( 'dbph_show_rights_howto', '1' );
+							?>
+							<div class="db-ui-field" style="grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--db-light-2);">
+								<label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+									<input type="checkbox" id="dbph_show_rights_howto" name="dbph[show_rights_howto]" value="1" <?php checked( $show_howto === '1' || $show_howto === 1 || $show_howto === true ); ?>>
+									<span>
+										<strong><?php esc_html_e( 'Includi istruzioni operative "Come esercitare i tuoi diritti"', 'db-privacy-hub' ); ?></strong>
+										<p class="description" style="margin-top: 4px;"><?php esc_html_e( 'Aggiunge alla Privacy Policy un blocco con le istruzioni passo passo per esercitare i diritti GDPR (procedura, identificazione, tempi di risposta, diritto di reclamo al Garante). Consigliato per maggiore trasparenza verso l\'utente.', 'db-privacy-hub' ); ?></p>
+									</span>
+								</label>
 							</div>
 						</div>
 					</div>
@@ -555,6 +596,12 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			$slug = sanitize_title( $in['page_slug'] ?? '' );
 			update_option( 'dbph_page_slug', $slug !== '' ? $slug : 'privacy-policy' );
+
+			// 1.2.0: toggle "Mostra istruzioni operative diritti" (default ON).
+			// I checkbox HTML non vengono inviati se non spuntati, quindi controlliamo
+			// la presenza del campo nel POST.
+			$show_howto = isset( $_POST['dbph']['show_rights_howto'] ) ? '1' : '0';
+			update_option( 'dbph_show_rights_howto', $show_howto );
 
 			DBPH_Register::flush_cache();
 
@@ -839,26 +886,54 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$entries = DBPH_DSAR_Log::get_entries( 100 );
 			$total   = DBPH_DSAR_Log::get_total_count();
 			$stats   = DBPH_DSAR_Log::get_stats();
+			$type_labels    = DBPH_DSAR_Log::get_type_labels();
+			$status_labels  = DBPH_DSAR_Log::get_status_labels();
+			$channel_labels = DBPH_DSAR_Log::get_channel_labels();
 			?>
 			<div class="wrap db-ui-wrap">
-				<h1><?php esc_html_e( 'Storico richieste DSAR', 'db-privacy-hub' ); ?></h1>
+				<h1>
+					<?php esc_html_e( 'Storico richieste DSAR', 'db-privacy-hub' ); ?>
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_DSAR_NEW ) ); ?>" class="page-title-action"><?php esc_html_e( 'Registra DSAR manuale', 'db-privacy-hub' ); ?></a>
+					<?php if ( $total > 0 ) : ?>
+						<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=dbph_export_dsar_csv' ), 'dbph_export_dsar_csv', '_dbph_nonce' ) ); ?>" class="page-title-action"><?php esc_html_e( 'Esporta CSV', 'db-privacy-hub' ); ?></a>
+					<?php endif; ?>
+				</h1>
 				<p class="description">
-					<?php esc_html_e( 'Registro permanente delle richieste di accesso (art. 15 GDPR) e cancellazione (art. 17 GDPR) gestite tramite Strumenti → Esporta/Cancella dati personali. Le email sono mascherate; un hash SHA-256 permette la verifica senza esposizione.', 'db-privacy-hub' ); ?>
+					<?php esc_html_e( 'Registro permanente delle richieste di esercizio dei diritti dell\'interessato (artt. 15-22 GDPR). Include sia richieste avviate via Strumenti → Esporta/Cancella dati personali di WordPress, sia richieste registrate manualmente (es. arrivate via email/PEC). Le email sono mascherate; un hash SHA-256 permette la verifica senza esposizione.', 'db-privacy-hub' ); ?>
 				</p>
+
+				<?php
+				// Notice di feedback per le azioni manual.
+				if ( ! empty( $_GET['dbph_msg'] ) ) {
+					$messages = array(
+						'manual_saved'   => __( 'Richiesta DSAR manuale salvata correttamente.',   'db-privacy-hub' ),
+						'manual_updated' => __( 'Richiesta DSAR aggiornata.',                       'db-privacy-hub' ),
+						'manual_deleted' => __( 'Richiesta DSAR eliminata.',                        'db-privacy-hub' ),
+					);
+					$key = sanitize_key( $_GET['dbph_msg'] );
+					if ( isset( $messages[ $key ] ) ) {
+						printf(
+							'<div class="db-ui-alert db-ui-alert-success" style="margin:12px 0"><span class="db-ui-alert-icon" aria-hidden="true">✅</span><span>%s</span></div>',
+							esc_html( $messages[ $key ] )
+						);
+					}
+				}
+				?>
 
 				<?php if ( $total === 0 ) : ?>
 					<div class="db-ui-alert db-ui-alert-info">
 						<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
-						<span><?php esc_html_e( 'Nessuna richiesta registrata. Le voci verranno aggiunte automaticamente quando un utente conferma una richiesta tramite WordPress Privacy Tools.', 'db-privacy-hub' ); ?></span>
+						<span><?php esc_html_e( 'Nessuna richiesta registrata. Le voci verranno aggiunte automaticamente quando un utente conferma una richiesta tramite WordPress Privacy Tools, oppure puoi registrarne una a mano per richieste arrivate via email/PEC.', 'db-privacy-hub' ); ?></span>
 					</div>
 				<?php else : ?>
 					<div class="db-ui-card">
-						<div class="db-ui-card-body" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+						<div class="db-ui-card-body" style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px">
 							<div><strong><?php echo (int) $stats['total']; ?></strong><br><small><?php esc_html_e( 'Totali', 'db-privacy-hub' ); ?></small></div>
-							<div><strong><?php echo (int) $stats['export_done']; ?></strong><br><small><?php esc_html_e( 'Export completati', 'db-privacy-hub' ); ?></small></div>
-							<div><strong><?php echo (int) $stats['export_pending']; ?></strong><br><small><?php esc_html_e( 'Export pending', 'db-privacy-hub' ); ?></small></div>
-							<div><strong><?php echo (int) $stats['erase_done']; ?></strong><br><small><?php esc_html_e( 'Cancellazioni completate', 'db-privacy-hub' ); ?></small></div>
-							<div><strong><?php echo (int) $stats['erase_pending']; ?></strong><br><small><?php esc_html_e( 'Cancellazioni pending', 'db-privacy-hub' ); ?></small></div>
+							<div><strong><?php echo (int) $stats['manual']; ?></strong><br><small><?php esc_html_e( 'Manuali', 'db-privacy-hub' ); ?></small></div>
+							<div><strong><?php echo (int) $stats['export_done']; ?></strong><br><small><?php esc_html_e( 'Accesso evasi', 'db-privacy-hub' ); ?></small></div>
+							<div><strong><?php echo (int) $stats['erase_done']; ?></strong><br><small><?php esc_html_e( 'Cancellazioni evase', 'db-privacy-hub' ); ?></small></div>
+							<div style="<?php echo $stats['due_soon'] > 0 ? 'color:#d97706' : ''; ?>"><strong><?php echo (int) $stats['due_soon']; ?></strong><br><small><?php esc_html_e( 'In scadenza (≤10gg)', 'db-privacy-hub' ); ?></small></div>
+							<div style="<?php echo $stats['overdue'] > 0 ? 'color:#dc2626;font-weight:600' : ''; ?>"><strong><?php echo (int) $stats['overdue']; ?></strong><br><small><?php esc_html_e( 'Scadute', 'db-privacy-hub' ); ?></small></div>
 						</div>
 					</div>
 
@@ -866,37 +941,63 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 						<thead>
 							<tr>
 								<th><?php esc_html_e( 'ID', 'db-privacy-hub' ); ?></th>
+								<th><?php esc_html_e( 'Fonte', 'db-privacy-hub' ); ?></th>
 								<th><?php esc_html_e( 'Email', 'db-privacy-hub' ); ?></th>
 								<th><?php esc_html_e( 'Tipo', 'db-privacy-hub' ); ?></th>
 								<th><?php esc_html_e( 'Stato', 'db-privacy-hub' ); ?></th>
 								<th><?php esc_html_e( 'Richiesta', 'db-privacy-hub' ); ?></th>
-								<th><?php esc_html_e( 'Confermata', 'db-privacy-hub' ); ?></th>
+								<th><?php esc_html_e( 'Scadenza GDPR', 'db-privacy-hub' ); ?></th>
 								<th><?php esc_html_e( 'Completata', 'db-privacy-hub' ); ?></th>
-								<th><?php esc_html_e( 'Hash email', 'db-privacy-hub' ); ?></th>
+								<th><?php esc_html_e( 'Azioni', 'db-privacy-hub' ); ?></th>
 							</tr>
 						</thead>
 						<tbody>
-							<?php foreach ( $entries as $e ) : ?>
-								<tr>
+							<?php foreach ( $entries as $e ) :
+								$deadline   = DBPH_DSAR_Log::calculate_deadline( $e );
+								$type_label = $type_labels[ $e->request_type ] ?? $e->request_type;
+								$status_lbl = $status_labels[ $e->status ] ?? $e->status;
+							?>
+								<tr<?php if ( $deadline['class'] === 'overdue' ) echo ' style="background:#fef2f2"'; ?>>
 									<td>#<?php echo (int) $e->id; ?></td>
-									<td><code><?php echo esc_html( $e->email_display ); ?></code></td>
 									<td>
-										<?php if ( $e->request_type === 'export' ) : ?>
-											<span class="db-ui-badge db-ui-badge-info">📤 <?php esc_html_e( 'Export', 'db-privacy-hub' ); ?></span>
+										<?php if ( $e->source === 'manual' ) : ?>
+											<span class="db-ui-badge" style="background:#e0e7ff;color:#3730a3"><?php esc_html_e( 'Manuale', 'db-privacy-hub' ); ?></span>
+										<?php elseif ( $e->source === 'consent_revoked' ) : ?>
+											<span class="db-ui-badge" style="background:#fef3c7;color:#92400e"><?php esc_html_e( 'Revoca', 'db-privacy-hub' ); ?></span>
 										<?php else : ?>
-											<span class="db-ui-badge db-ui-badge-warning">🗑 <?php esc_html_e( 'Erase', 'db-privacy-hub' ); ?></span>
+											<span class="db-ui-badge db-ui-badge-muted"><?php esc_html_e( 'WP nativo', 'db-privacy-hub' ); ?></span>
 										<?php endif; ?>
 									</td>
+									<td><code><?php echo esc_html( $e->email_display ); ?></code></td>
+									<td><?php echo esc_html( $type_label ); ?></td>
 									<td>
 										<?php
-										$badge_class = $e->status === 'completed' ? 'db-ui-badge-success' : 'db-ui-badge-muted';
+										$badge_class = 'db-ui-badge-muted';
+										if ( $e->status === 'completed' ) $badge_class = 'db-ui-badge-success';
+										elseif ( $e->status === 'rejected' || $e->status === 'expired' ) $badge_class = 'db-ui-badge-warning';
 										?>
-										<span class="db-ui-badge <?php echo esc_attr( $badge_class ); ?>"><?php echo esc_html( $e->status ); ?></span>
+										<span class="db-ui-badge <?php echo esc_attr( $badge_class ); ?>"><?php echo esc_html( $status_lbl ); ?></span>
 									</td>
 									<td><?php echo esc_html( $e->requested_at ?: '—' ); ?></td>
-									<td><?php echo esc_html( $e->confirmed_at ?: '—' ); ?></td>
+									<td>
+										<?php if ( $deadline['class'] === 'overdue' ) : ?>
+											<span style="color:#dc2626;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
+										<?php elseif ( $deadline['class'] === 'due_soon' ) : ?>
+											<span style="color:#d97706;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
+										<?php elseif ( $deadline['class'] === 'ok' ) : ?>
+											<span style="color:#16a34a"><?php echo esc_html( $deadline['label'] ); ?></span>
+										<?php else : ?>
+											<span style="color:#9ca3af">—</span>
+										<?php endif; ?>
+									</td>
 									<td><?php echo esc_html( $e->completed_at ?: '—' ); ?></td>
-									<td><code style="font-size:10px"><?php echo esc_html( substr( $e->email_hash, 0, 16 ) ); ?>…</code></td>
+									<td>
+										<?php if ( $e->source === 'manual' ) : ?>
+											<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_DSAR_NEW . '&id=' . (int) $e->id ) ); ?>"><?php esc_html_e( 'Modifica', 'db-privacy-hub' ); ?></a>
+										<?php else : ?>
+											<span style="color:#9ca3af"><?php esc_html_e( 'Solo lettura', 'db-privacy-hub' ); ?></span>
+										<?php endif; ?>
+									</td>
 								</tr>
 							<?php endforeach; ?>
 						</tbody>
@@ -904,6 +1005,288 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				<?php endif; ?>
 			</div>
 			<?php
+		}
+
+		/* =====================================================================
+		 * Render: Form registrazione DSAR manuale (1.2.0)
+		 * ================================================================== */
+
+		public static function render_dsar_manual_form() {
+			$edit_id = isset( $_GET['id'] ) ? (int) $_GET['id'] : 0;
+			$row = $edit_id > 0 ? DBPH_DSAR_Log::get_by_id( $edit_id ) : null;
+			$is_edit = ( $row && $row->source === 'manual' );
+
+			$type_labels    = DBPH_DSAR_Log::get_type_labels();
+			$status_labels  = DBPH_DSAR_Log::get_status_labels();
+			$channel_labels = DBPH_DSAR_Log::get_channel_labels();
+
+			// Defaults / valori per edit.
+			$current = array(
+				'request_type' => $is_edit ? $row->request_type : '',
+				'email'        => '',  // mai visibile in chiaro: solo input nuovo
+				'channel'      => $is_edit ? $row->channel      : 'email',
+				'description'  => $is_edit ? $row->description  : '',
+				'status'       => $is_edit ? $row->status       : 'received',
+				'requested_at' => $is_edit ? $row->requested_at : current_time( 'mysql' ),
+				'completed_at' => $is_edit ? $row->completed_at : '',
+				'notes'        => $is_edit ? $row->notes        : '',
+			);
+			?>
+			<div class="wrap db-ui-wrap">
+				<h1>
+					<?php echo $is_edit ? esc_html__( 'Modifica richiesta DSAR manuale', 'db-privacy-hub' ) : esc_html__( 'Registra DSAR manuale', 'db-privacy-hub' ); ?>
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_DSAR_LOG ) ); ?>" class="page-title-action"><?php esc_html_e( '← Storico', 'db-privacy-hub' ); ?></a>
+				</h1>
+				<p class="description">
+					<?php esc_html_e( 'Usa questo form per registrare richieste DSAR arrivate fuori dal flusso WordPress (es. via email, PEC, raccomandata). Il registro centralizzato è fondamentale per il principio di accountability (art. 5.2 GDPR).', 'db-privacy-hub' ); ?>
+				</p>
+
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="db-ui-card">
+					<div class="db-ui-card-body">
+						<input type="hidden" name="action" value="dbph_save_manual_dsar">
+						<?php if ( $is_edit ) : ?>
+							<input type="hidden" name="id" value="<?php echo (int) $edit_id; ?>">
+						<?php endif; ?>
+						<?php wp_nonce_field( 'dbph_save_manual_dsar', '_dbph_nonce' ); ?>
+
+						<div class="db-ui-field">
+							<label for="dbph_request_type"><?php esc_html_e( 'Tipo di richiesta', 'db-privacy-hub' ); ?> <span style="color:#dc2626">*</span></label>
+							<select id="dbph_request_type" name="request_type" required<?php echo $is_edit ? ' disabled' : ''; ?>>
+								<option value=""><?php esc_html_e( '— Seleziona —', 'db-privacy-hub' ); ?></option>
+								<?php foreach ( $type_labels as $val => $label ) : ?>
+									<option value="<?php echo esc_attr( $val ); ?>" <?php selected( $current['request_type'], $val ); ?>><?php echo esc_html( $label ); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<?php if ( $is_edit ) : ?>
+								<input type="hidden" name="request_type" value="<?php echo esc_attr( $current['request_type'] ); ?>">
+								<p class="description"><?php esc_html_e( 'Il tipo non è modificabile una volta registrato.', 'db-privacy-hub' ); ?></p>
+							<?php endif; ?>
+						</div>
+
+						<?php if ( ! $is_edit ) : ?>
+							<div class="db-ui-field">
+								<label for="dbph_email"><?php esc_html_e( 'Identificativo (email)', 'db-privacy-hub' ); ?> <span style="color:#dc2626">*</span></label>
+								<input type="text" id="dbph_email" name="email" required class="regular-text" placeholder="utente@example.com">
+								<p class="description"><?php esc_html_e( 'L\'email viene memorizzata mascherata e come hash SHA-256. Non viene mai esposta in chiaro nel registro.', 'db-privacy-hub' ); ?></p>
+							</div>
+						<?php else : ?>
+							<div class="db-ui-field">
+								<label><?php esc_html_e( 'Identificativo registrato', 'db-privacy-hub' ); ?></label>
+								<code><?php echo esc_html( $row->email_display ); ?></code>
+								<p class="description"><?php esc_html_e( 'L\'identificativo non è modificabile per preservare l\'integrità del record.', 'db-privacy-hub' ); ?></p>
+							</div>
+						<?php endif; ?>
+
+						<div class="db-ui-field">
+							<label for="dbph_channel"><?php esc_html_e( 'Canale di ricezione', 'db-privacy-hub' ); ?></label>
+							<select id="dbph_channel" name="channel">
+								<?php foreach ( $channel_labels as $val => $label ) : ?>
+									<option value="<?php echo esc_attr( $val ); ?>" <?php selected( $current['channel'], $val ); ?>><?php echo esc_html( $label ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+
+						<div class="db-ui-field">
+							<label for="dbph_description"><?php esc_html_e( 'Descrizione richiesta', 'db-privacy-hub' ); ?></label>
+							<textarea id="dbph_description" name="description" rows="4" class="large-text" placeholder="<?php esc_attr_e( 'Riassumi cosa l\'utente ha chiesto (es. \'Richiesta cancellazione di tutti i dati relativi all\'iscrizione newsletter\')', 'db-privacy-hub' ); ?>"><?php echo esc_textarea( $current['description'] ); ?></textarea>
+						</div>
+
+						<div class="db-ui-field">
+							<label for="dbph_status"><?php esc_html_e( 'Stato', 'db-privacy-hub' ); ?></label>
+							<select id="dbph_status" name="status">
+								<?php
+								// Solo gli stati pertinenti al flusso manuale
+								$manual_statuses = array( 'received', 'in_progress', 'completed', 'rejected' );
+								foreach ( $manual_statuses as $st ) :
+									$lbl = $status_labels[ $st ] ?? $st;
+								?>
+									<option value="<?php echo esc_attr( $st ); ?>" <?php selected( $current['status'], $st ); ?>><?php echo esc_html( $lbl ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+
+						<div class="db-ui-field">
+							<label for="dbph_requested_at"><?php esc_html_e( 'Data ricezione', 'db-privacy-hub' ); ?></label>
+							<input type="datetime-local" id="dbph_requested_at" name="requested_at" value="<?php echo esc_attr( self::to_html5_datetime( $current['requested_at'] ) ); ?>">
+							<p class="description"><?php esc_html_e( 'Da questa data parte il termine di 30 giorni per l\'evasione (art. 12.3 GDPR).', 'db-privacy-hub' ); ?></p>
+						</div>
+
+						<div class="db-ui-field">
+							<label for="dbph_completed_at"><?php esc_html_e( 'Data completamento', 'db-privacy-hub' ); ?></label>
+							<input type="datetime-local" id="dbph_completed_at" name="completed_at" value="<?php echo esc_attr( self::to_html5_datetime( $current['completed_at'] ) ); ?>">
+							<p class="description"><?php esc_html_e( 'Compila quando la richiesta è stata evasa.', 'db-privacy-hub' ); ?></p>
+						</div>
+
+						<div class="db-ui-field">
+							<label for="dbph_notes"><?php esc_html_e( 'Note interne', 'db-privacy-hub' ); ?></label>
+							<textarea id="dbph_notes" name="notes" rows="4" class="large-text" placeholder="<?php esc_attr_e( 'Note operative su come è stata gestita la richiesta (es. \'Verificata identità via documento, dati cancellati il 15/05, comunicazione di completamento inviata\')', 'db-privacy-hub' ); ?>"><?php echo esc_textarea( $current['notes'] ); ?></textarea>
+						</div>
+
+						<p>
+							<button type="submit" class="db-ui-btn db-ui-btn-primary"><?php echo $is_edit ? esc_html__( 'Salva modifiche', 'db-privacy-hub' ) : esc_html__( 'Registra richiesta', 'db-privacy-hub' ); ?></button>
+							<?php if ( $is_edit ) : ?>
+								&nbsp;
+								<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=dbph_delete_manual_dsar&id=' . (int) $edit_id ), 'dbph_delete_manual_dsar_' . $edit_id, '_dbph_nonce' ) ); ?>" class="db-ui-btn db-ui-btn-danger" onclick="return confirm('<?php echo esc_js( __( 'Eliminare definitivamente questa richiesta DSAR? Questa operazione è irreversibile.', 'db-privacy-hub' ) ); ?>');"><?php esc_html_e( 'Elimina', 'db-privacy-hub' ); ?></a>
+							<?php endif; ?>
+						</p>
+					</div>
+				</form>
+			</div>
+			<?php
+		}
+
+		/**
+		 * Converte una datetime MySQL (Y-m-d H:i:s) in formato <input type="datetime-local">.
+		 */
+		private static function to_html5_datetime( $mysql_dt ) {
+			if ( empty( $mysql_dt ) ) return '';
+			$ts = strtotime( $mysql_dt );
+			if ( ! $ts ) return '';
+			return date( 'Y-m-d\TH:i', $ts );
+		}
+
+		/* =====================================================================
+		 * Handler: salvataggio DSAR manuale (insert o update)
+		 * ================================================================== */
+
+		public static function handle_save_manual_dsar() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'Permesso negato.', 'db-privacy-hub' ), '', array( 'response' => 403 ) );
+			}
+			check_admin_referer( 'dbph_save_manual_dsar', '_dbph_nonce' );
+
+			$id = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
+
+			// Normalizza datetime HTML5 → MySQL
+			$req_at = isset( $_POST['requested_at'] ) ? sanitize_text_field( wp_unslash( $_POST['requested_at'] ) ) : '';
+			$req_at = $req_at ? date( 'Y-m-d H:i:s', strtotime( $req_at ) ) : current_time( 'mysql' );
+
+			$comp_at_raw = isset( $_POST['completed_at'] ) ? sanitize_text_field( wp_unslash( $_POST['completed_at'] ) ) : '';
+			$comp_at = $comp_at_raw ? date( 'Y-m-d H:i:s', strtotime( $comp_at_raw ) ) : null;
+
+			$args = array(
+				'request_type' => isset( $_POST['request_type'] ) ? sanitize_text_field( wp_unslash( $_POST['request_type'] ) ) : '',
+				'email'        => isset( $_POST['email'] ) ? sanitize_text_field( wp_unslash( $_POST['email'] ) ) : '',
+				'channel'      => isset( $_POST['channel'] ) ? sanitize_text_field( wp_unslash( $_POST['channel'] ) ) : 'email',
+				'description'  => isset( $_POST['description'] ) ? wp_unslash( $_POST['description'] ) : '',
+				'status'       => isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : 'received',
+				'requested_at' => $req_at,
+				'completed_at' => $comp_at,
+				'notes'        => isset( $_POST['notes'] ) ? wp_unslash( $_POST['notes'] ) : '',
+			);
+
+			if ( $id > 0 ) {
+				// Update
+				$result = DBPH_DSAR_Log::update_manual( $id, array(
+					'status'       => $args['status'],
+					'description'  => $args['description'],
+					'channel'      => $args['channel'],
+					'requested_at' => $args['requested_at'],
+					'completed_at' => $args['completed_at'],
+					'notes'        => $args['notes'],
+				) );
+				if ( is_wp_error( $result ) ) {
+					wp_die( esc_html( $result->get_error_message() ), '', array( 'back_link' => true ) );
+				}
+				wp_safe_redirect( add_query_arg(
+					array( 'page' => self::PAGE_DSAR_LOG, 'dbph_msg' => 'manual_updated' ),
+					admin_url( 'admin.php' )
+				) );
+				exit;
+			}
+
+			// Insert
+			$result = DBPH_DSAR_Log::insert_manual( $args );
+			if ( is_wp_error( $result ) ) {
+				wp_die( esc_html( $result->get_error_message() ), '', array( 'back_link' => true ) );
+			}
+			wp_safe_redirect( add_query_arg(
+				array( 'page' => self::PAGE_DSAR_LOG, 'dbph_msg' => 'manual_saved' ),
+				admin_url( 'admin.php' )
+			) );
+			exit;
+		}
+
+		/* =====================================================================
+		 * Handler: cancellazione DSAR manuale
+		 * ================================================================== */
+
+		public static function handle_delete_manual_dsar() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'Permesso negato.', 'db-privacy-hub' ), '', array( 'response' => 403 ) );
+			}
+			$id = isset( $_GET['id'] ) ? (int) $_GET['id'] : 0;
+			check_admin_referer( 'dbph_delete_manual_dsar_' . $id, '_dbph_nonce' );
+
+			$result = DBPH_DSAR_Log::delete_manual( $id );
+			if ( is_wp_error( $result ) ) {
+				wp_die( esc_html( $result->get_error_message() ), '', array( 'back_link' => true ) );
+			}
+			wp_safe_redirect( add_query_arg(
+				array( 'page' => self::PAGE_DSAR_LOG, 'dbph_msg' => 'manual_deleted' ),
+				admin_url( 'admin.php' )
+			) );
+			exit;
+		}
+
+		/* =====================================================================
+		 * Handler: export CSV registro DSAR (D)
+		 * ================================================================== */
+
+		public static function handle_export_dsar_csv() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'Permesso negato.', 'db-privacy-hub' ), '', array( 'response' => 403 ) );
+			}
+			check_admin_referer( 'dbph_export_dsar_csv', '_dbph_nonce' );
+
+			$entries = DBPH_DSAR_Log::get_entries( 5000 );
+			$type_labels    = DBPH_DSAR_Log::get_type_labels();
+			$status_labels  = DBPH_DSAR_Log::get_status_labels();
+			$channel_labels = DBPH_DSAR_Log::get_channel_labels();
+
+			$filename = sprintf( 'dbph-dsar-log-%s.csv', date( 'Y-m-d-His' ) );
+			nocache_headers();
+			header( 'Content-Type: text/csv; charset=utf-8' );
+			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+
+			$out = fopen( 'php://output', 'w' );
+			// BOM UTF-8 per Excel
+			fputs( $out, "\xEF\xBB\xBF" );
+
+			// Header
+			fputcsv( $out, array(
+				'ID', 'Fonte', 'Email mascherata', 'Hash email', 'Tipo richiesta',
+				'Stato', 'Canale', 'Data richiesta', 'Data conferma', 'Data completamento',
+				'Scadenza GDPR (gg)', 'Descrizione', 'Note',
+			) );
+
+			$source_labels = array(
+				'wp_native'       => 'WP nativo',
+				'manual'          => 'Manuale',
+				'consent_revoked' => 'Revoca consenso',
+			);
+
+			foreach ( $entries as $e ) {
+				$deadline = DBPH_DSAR_Log::calculate_deadline( $e );
+				fputcsv( $out, array(
+					$e->id,
+					$source_labels[ $e->source ] ?? $e->source,
+					$e->email_display,
+					$e->email_hash,
+					$type_labels[ $e->request_type ] ?? $e->request_type,
+					$status_labels[ $e->status ] ?? $e->status,
+					$channel_labels[ $e->channel ] ?? $e->channel,
+					$e->requested_at,
+					$e->confirmed_at,
+					$e->completed_at,
+					$deadline['days'],
+					$e->description,
+					$e->notes,
+				) );
+			}
+
+			fclose( $out );
+			exit;
 		}
 
 		/* =====================================================================
@@ -997,6 +1380,218 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				<?php endif; ?>
 			</div>
 			<?php
+		}
+		/* =====================================================================
+		 * Render: Registro consensi (1.3.0)
+		 * Vista unificata di tutti i consensi raccolti dai plugin DB.
+		 * ================================================================== */
+
+		public static function render_consents_register() {
+			$sources = DBPH_Consents_Register::get_sources();
+
+			// Filtri da query string.
+			$args = array(
+				'date_from' => isset( $_GET['date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['date_from'] ) ) : '',
+				'date_to'   => isset( $_GET['date_to'] )   ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) )   : '',
+				'subject'   => isset( $_GET['subject'] )   ? sanitize_text_field( wp_unslash( $_GET['subject'] ) )   : '',
+				'source'    => isset( $_GET['source'] )    ? sanitize_key( $_GET['source'] )                          : '',
+			);
+
+			$rows = empty( $sources ) ? array() : DBPH_Consents_Register::query_all( $args, 200 );
+			?>
+			<div class="wrap db-ui-wrap">
+				<h1>
+					<?php esc_html_e( 'Registro consensi', 'db-privacy-hub' ); ?>
+					<?php if ( ! empty( $rows ) ) : ?>
+						<a href="<?php echo esc_url( wp_nonce_url(
+							add_query_arg( $args, admin_url( 'admin-post.php?action=dbph_export_consents_csv' ) ),
+							'dbph_export_consents_csv', '_dbph_nonce'
+						) ); ?>" class="page-title-action"><?php esc_html_e( 'Esporta CSV', 'db-privacy-hub' ); ?></a>
+					<?php endif; ?>
+				</h1>
+				<p class="description">
+					<?php esc_html_e( 'Vista unificata dei consensi raccolti dai plugin DB attivi (Cookie Manager, Form Builder e altri compatibili). Soddisfa l\'obbligo di accountability previsto dall\'art. 7.1 GDPR: il titolare deve essere in grado di dimostrare che l\'interessato ha prestato il proprio consenso al trattamento dei propri dati.', 'db-privacy-hub' ); ?>
+				</p>
+
+				<?php if ( empty( $sources ) ) : ?>
+					<div class="db-ui-alert db-ui-alert-info" style="margin-top:16px">
+						<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
+						<span><?php
+							printf(
+								/* translators: 1: codice filter, 2: codice plugin di esempio */
+								esc_html__( 'Nessuna fonte di consenso registrata. Per popolare questa pagina installa e attiva plugin che dichiarano il filter %1$s (es. %2$s).', 'db-privacy-hub' ),
+								'<code>dbph_consents_register</code>',
+								'<code>DB Cookie Manager 3.2.0+</code>, <code>DB Form Builder 2.11.0+</code>'
+							);
+						?></span>
+					</div>
+				<?php else : ?>
+
+					<?php // Card riepilogativa per fonte ?>
+					<div class="db-ui-card" style="margin-top:16px">
+						<div class="db-ui-card-body" style="display:grid;grid-template-columns:repeat(<?php echo (int) ( count( $sources ) + 1 ); ?>,1fr);gap:12px">
+							<div>
+								<strong><?php echo (int) DBPH_Consents_Register::count_all( array() ); ?></strong><br>
+								<small><?php esc_html_e( 'Totali (tutte le fonti)', 'db-privacy-hub' ); ?></small>
+							</div>
+							<?php foreach ( $sources as $key => $src ) : ?>
+								<div>
+									<strong><?php echo (int) DBPH_Consents_Register::count_for( $key, array() ); ?></strong><br>
+									<small><?php echo esc_html( $src['label'] ); ?></small>
+								</div>
+							<?php endforeach; ?>
+						</div>
+					</div>
+
+					<?php // Form di filtri ?>
+					<form method="get" class="db-ui-card" style="margin-top:16px">
+						<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_CONSENTS ); ?>">
+						<div class="db-ui-card-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end">
+							<div>
+								<label for="dbph-filter-source"><strong><?php esc_html_e( 'Fonte', 'db-privacy-hub' ); ?></strong></label>
+								<select id="dbph-filter-source" name="source" style="width:100%">
+									<option value=""><?php esc_html_e( 'Tutte', 'db-privacy-hub' ); ?></option>
+									<?php foreach ( $sources as $key => $src ) : ?>
+										<option value="<?php echo esc_attr( $key ); ?>" <?php selected( $args['source'], $key ); ?>><?php echo esc_html( $src['label'] ); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</div>
+							<div>
+								<label for="dbph-filter-from"><strong><?php esc_html_e( 'Da', 'db-privacy-hub' ); ?></strong></label>
+								<input type="date" id="dbph-filter-from" name="date_from" value="<?php echo esc_attr( $args['date_from'] ); ?>" style="width:100%">
+							</div>
+							<div>
+								<label for="dbph-filter-to"><strong><?php esc_html_e( 'A', 'db-privacy-hub' ); ?></strong></label>
+								<input type="date" id="dbph-filter-to" name="date_to" value="<?php echo esc_attr( $args['date_to'] ); ?>" style="width:100%">
+							</div>
+							<div>
+								<label for="dbph-filter-subject"><strong><?php esc_html_e( 'Identificativo (testo libero)', 'db-privacy-hub' ); ?></strong></label>
+								<input type="text" id="dbph-filter-subject" name="subject" value="<?php echo esc_attr( $args['subject'] ); ?>" placeholder="<?php esc_attr_e( 'parte di email…', 'db-privacy-hub' ); ?>" style="width:100%">
+							</div>
+						</div>
+						<div class="db-ui-card-body" style="border-top:1px solid var(--db-light-2)">
+							<button type="submit" class="db-ui-btn db-ui-btn-primary"><?php esc_html_e( 'Filtra', 'db-privacy-hub' ); ?></button>
+							<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_CONSENTS ) ); ?>" class="db-ui-btn"><?php esc_html_e( 'Reset', 'db-privacy-hub' ); ?></a>
+						</div>
+					</form>
+
+					<?php if ( empty( $rows ) ) : ?>
+						<div class="db-ui-alert db-ui-alert-info" style="margin-top:16px">
+							<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
+							<span><?php esc_html_e( 'Nessun consenso corrisponde ai filtri selezionati.', 'db-privacy-hub' ); ?></span>
+						</div>
+					<?php else : ?>
+						<table class="widefat striped" style="margin-top:16px">
+							<thead>
+								<tr>
+									<th><?php esc_html_e( 'Quando', 'db-privacy-hub' ); ?></th>
+									<th><?php esc_html_e( 'Fonte', 'db-privacy-hub' ); ?></th>
+									<th><?php esc_html_e( 'Identificativo', 'db-privacy-hub' ); ?></th>
+									<th><?php esc_html_e( 'Tipo consenso', 'db-privacy-hub' ); ?></th>
+									<th><?php esc_html_e( 'Testo letto', 'db-privacy-hub' ); ?></th>
+									<th><?php esc_html_e( 'Versione policy', 'db-privacy-hub' ); ?></th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php foreach ( $rows as $row ) :
+									$ts      = is_array( $row ) ? ( $row['timestamp']      ?? '' ) : ( $row->timestamp      ?? '' );
+									$src_lbl = is_array( $row ) ? ( $row['source_label']   ?? '' ) : ( $row->source_label   ?? '' );
+									$subject = is_array( $row ) ? ( $row['subject']        ?? '' ) : ( $row->subject        ?? '' );
+									$ctype   = is_array( $row ) ? ( $row['consent_type']   ?? '' ) : ( $row->consent_type   ?? '' );
+									$ctext   = is_array( $row ) ? ( $row['consent_text']   ?? '' ) : ( $row->consent_text   ?? '' );
+									$pver    = is_array( $row ) ? ( $row['policy_version'] ?? 0 )  : ( $row->policy_version ?? 0 );
+								?>
+									<tr>
+										<td><code><?php echo esc_html( $ts ); ?></code></td>
+										<td><span class="db-ui-badge db-ui-badge-info"><?php echo esc_html( $src_lbl ); ?></span></td>
+										<td><code><?php echo esc_html( $subject ); ?></code></td>
+										<td><?php echo esc_html( $ctype ); ?></td>
+										<td>
+											<?php
+											$short = mb_substr( $ctext, 0, 80 );
+											$is_truncated = mb_strlen( $ctext ) > 80;
+											echo esc_html( $short );
+											if ( $is_truncated ) {
+												echo '…';
+											}
+											?>
+										</td>
+										<td>
+											<?php if ( (int) $pver > 0 ) : ?>
+												<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_POLICY_HIST . '#v' . (int) $pver ) ); ?>">v#<?php echo (int) $pver; ?></a>
+											<?php else : ?>
+												<span style="color:#9ca3af">—</span>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+						<p class="description" style="margin-top:8px">
+							<?php esc_html_e( 'Mostrate fino a 200 righe più recenti che corrispondono ai filtri. Per il dataset completo usa "Esporta CSV".', 'db-privacy-hub' ); ?>
+						</p>
+					<?php endif; ?>
+
+				<?php endif; ?>
+			</div>
+			<?php
+		}
+
+		/* =====================================================================
+		 * Handler: export Registro consensi CSV (1.3.0)
+		 * ================================================================== */
+
+		public static function handle_export_consents_csv() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'Permesso negato.', 'db-privacy-hub' ), '', array( 'response' => 403 ) );
+			}
+			check_admin_referer( 'dbph_export_consents_csv', '_dbph_nonce' );
+
+			$args = array(
+				'date_from' => isset( $_GET['date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['date_from'] ) ) : '',
+				'date_to'   => isset( $_GET['date_to'] )   ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) )   : '',
+				'subject'   => isset( $_GET['subject'] )   ? sanitize_text_field( wp_unslash( $_GET['subject'] ) )   : '',
+				'source'    => isset( $_GET['source'] )    ? sanitize_key( $_GET['source'] )                          : '',
+			);
+
+			// Per il CSV recuperiamo tutto, senza il limite di 200.
+			$rows = DBPH_Consents_Register::query_all( $args, 50000 );
+
+			$filename = sprintf( 'dbph-consents-register-%s.csv', date( 'Y-m-d-His' ) );
+			nocache_headers();
+			header( 'Content-Type: text/csv; charset=utf-8' );
+			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+
+			$out = fopen( 'php://output', 'w' );
+			fputs( $out, "\xEF\xBB\xBF" ); // BOM UTF-8 per Excel.
+
+			fputcsv( $out, array(
+				'Timestamp', 'Fonte', 'Identificativo', 'Tipo consenso',
+				'Testo consenso', 'Versione Privacy Policy', 'Extra',
+			) );
+
+			foreach ( $rows as $row ) {
+				$ts      = is_array( $row ) ? ( $row['timestamp']      ?? '' ) : ( $row->timestamp      ?? '' );
+				$src_lbl = is_array( $row ) ? ( $row['source_label']   ?? '' ) : ( $row->source_label   ?? '' );
+				$subject = is_array( $row ) ? ( $row['subject']        ?? '' ) : ( $row->subject        ?? '' );
+				$ctype   = is_array( $row ) ? ( $row['consent_type']   ?? '' ) : ( $row->consent_type   ?? '' );
+				$ctext   = is_array( $row ) ? ( $row['consent_text']   ?? '' ) : ( $row->consent_text   ?? '' );
+				$pver    = is_array( $row ) ? ( $row['policy_version'] ?? 0 )  : ( $row->policy_version ?? 0 );
+				$extra   = is_array( $row ) ? ( $row['extra']          ?? array() ) : ( $row->extra ?? array() );
+
+				fputcsv( $out, array(
+					$ts,
+					$src_lbl,
+					$subject,
+					$ctype,
+					$ctext,
+					$pver > 0 ? 'v#' . $pver : '',
+					is_array( $extra ) ? wp_json_encode( $extra ) : (string) $extra,
+				) );
+			}
+
+			fclose( $out );
+			exit;
 		}
 	}
 }

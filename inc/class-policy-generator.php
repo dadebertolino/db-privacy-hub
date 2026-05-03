@@ -499,6 +499,58 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 				) . '</p>';
 			}
 
+			// 1.2.0: blocco operativo "Esercita i tuoi diritti" — opt-in via option dbph_show_rights_howto (default ON).
+			$show_howto = get_option( 'dbph_show_rights_howto', '1' );
+			if ( $show_howto === '1' || $show_howto === 1 || $show_howto === true ) {
+				$html .= self::build_rights_howto_block( $context );
+			}
+
+			return $html;
+		}
+
+		/**
+		 * Blocco "Come esercitare i tuoi diritti" — istruzioni operative
+		 * dettagliate per l'utente. Opt-in dal form titolare (default ON).
+		 *
+		 * @since 1.2.0
+		 */
+		private static function build_rights_howto_block( $context ) {
+			$contact = self::get_contact_email_for_rights( $context );
+
+			$html  = '<h4>' . esc_html__( 'Come esercitare concretamente i tuoi diritti', 'db-privacy-hub' ) . '</h4>';
+			$html .= '<p>' . esc_html__( 'Per esercitare uno dei diritti sopra elencati, segui questa procedura:', 'db-privacy-hub' ) . '</p>';
+
+			$html .= '<ol>';
+			$html .= '<li>' . esc_html__( 'Identifica il diritto che vuoi esercitare tra quelli elencati (accesso, rettifica, cancellazione, ecc.).', 'db-privacy-hub' ) . '</li>';
+
+			if ( $contact !== '' ) {
+				$html .= '<li>' . sprintf(
+					/* translators: %s: email del titolare */
+					esc_html__( 'Invia una richiesta scritta a %s. Il messaggio non richiede una forma particolare, ma più la richiesta è specifica più sarà rapida la risposta.', 'db-privacy-hub' ),
+					'<a href="mailto:' . esc_attr( $contact ) . '">' . esc_html( $contact ) . '</a>'
+				) . '</li>';
+			} else {
+				$html .= '<li>' . esc_html__( 'Invia una richiesta scritta al titolare del trattamento utilizzando i recapiti riportati in cima all\'informativa.', 'db-privacy-hub' ) . '</li>';
+			}
+
+			$html .= '<li>' . esc_html__( 'Includi: i tuoi dati identificativi (nome, cognome, indirizzo email utilizzato sul sito), la natura del diritto che intendi esercitare, eventuali dettagli utili per individuare i dati di tuo interesse.', 'db-privacy-hub' ) . '</li>';
+
+			$html .= '<li>' . esc_html__( 'Per identificarti il titolare può richiederti documenti aggiuntivi, soprattutto in caso di richieste di cancellazione o portabilità.', 'db-privacy-hub' ) . '</li>';
+
+			$html .= '<li>' . esc_html__( 'Il titolare risponde alla richiesta entro un mese dal ricevimento (art. 12.3 GDPR), prorogabile di ulteriori due mesi nei casi più complessi, dandone comunicazione all\'interessato.', 'db-privacy-hub' ) . '</li>';
+
+			$html .= '<li>' . esc_html__( 'L\'esercizio dei diritti è gratuito. Solo in caso di richieste manifestamente infondate o eccessive (in particolare per il loro carattere ripetitivo) il titolare può addebitare un contributo spese ragionevole o rifiutare la richiesta motivandola.', 'db-privacy-hub' ) . '</li>';
+
+			$html .= '</ol>';
+
+			$html .= '<h4>' . esc_html__( 'Diritto di reclamo all\'autorità di controllo', 'db-privacy-hub' ) . '</h4>';
+			$html .= '<p>' . sprintf(
+				/* translators: %s: link al sito del Garante */
+				esc_html__( 'Se ritieni che il trattamento dei tuoi dati personali violi le disposizioni del GDPR o della normativa italiana in materia di protezione dei dati personali, hai il diritto di proporre reclamo al Garante per la protezione dei dati personali (art. 77 GDPR), con sede in Piazza Venezia 11, 00187 Roma. Il modulo di reclamo è disponibile sul sito ufficiale del Garante: %s.', 'db-privacy-hub' ),
+				'<a href="https://www.gpdp.it" target="_blank" rel="noopener noreferrer">www.gpdp.it</a>'
+			) . '</p>';
+			$html .= '<p>' . esc_html__( 'In alternativa al reclamo amministrativo, puoi rivolgerti all\'autorità giudiziaria ordinaria.', 'db-privacy-hub' ) . '</p>';
+
 			return $html;
 		}
 

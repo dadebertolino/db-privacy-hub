@@ -90,7 +90,47 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 				),
 				array( '%s', '%s', '%d', '%s' )
 			);
-			return $ok ? (int) $wpdb->insert_id : false;
+			if ( ! $ok ) {
+				return false;
+			}
+
+			$new_id = (int) $wpdb->insert_id;
+
+			// 1.3.0: tieni allineata l'option `dbph_policy_current_version` per
+			// la lettura veloce da plugin terzi (Cookie Manager, Form Builder)
+			// che agganciano l'ID alla loro riga di consenso al momento dello
+			// scatto. Evita una query a `get_current_version_id()` ad ogni evento.
+			update_option( 'dbph_policy_current_version', $new_id );
+
+			return $new_id;
+		}
+
+		/**
+		 * API pubblica: ID della versione Privacy Policy attualmente in vigore.
+		 *
+		 * Usata dai plugin DB (Cookie Manager, Form Builder) al momento di un
+		 * consenso, per linkare il consenso al documento che l'utente leggeva.
+		 *
+		 * Restituisce 0 se non ci sono ancora snapshot. Plugin terzi devono
+		 * trattare 0 come "policy non disponibile/non pubblicata al momento".
+		 *
+		 * @since 1.3.0
+		 * @return int ID della versione corrente, 0 se nessuna pubblicata.
+		 */
+		public static function get_current_version_id() {
+			$cached = (int) get_option( 'dbph_policy_current_version', 0 );
+			if ( $cached > 0 ) {
+				return $cached;
+			}
+			// Fallback: se l'option non è stata mai valorizzata (es. installazioni
+			// pre-1.3.0 con snapshot già esistenti), interroga la tabella.
+			global $wpdb;
+			$table = $wpdb->prefix . self::TABLE_NAME;
+			$id = (int) $wpdb->get_var( "SELECT id FROM {$table} ORDER BY id DESC LIMIT 1" );
+			if ( $id > 0 ) {
+				update_option( 'dbph_policy_current_version', $id );
+			}
+			return $id;
 		}
 
 		/**

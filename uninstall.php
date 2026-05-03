@@ -47,8 +47,18 @@ $options = array(
 	'dbph_responsabili',
 	'dbph_dsar_log_schema',
 	'dbph_policy_archive_schema',
+	// 1.2.0: nuova option toggle istruzioni operative diritti.
+	'dbph_show_rights_howto',
+	// 1.3.0: cache ID versione Privacy Policy corrente
+	'dbph_policy_current_version',
 );
 
 foreach ( $options as $opt ) {
 	delete_option( $opt );
+}
+
+// 1.2.0: pulisci anche eventuali cron schedulati.
+$ts = wp_next_scheduled( 'dbph_dsar_cleanup_pending' );
+if ( $ts ) {
+	wp_unschedule_event( $ts, 'dbph_dsar_cleanup_pending' );
 }

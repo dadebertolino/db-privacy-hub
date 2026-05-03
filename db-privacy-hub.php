@@ -3,7 +3,7 @@
  * Plugin Name:       DB Privacy Hub
  * Plugin URI:        https://www.davidebertolino.it/progetti/db-privacy-hub/
  * Description:       Hub privacy unificato per l'ecosistema plugin DB. Raccoglie i trattamenti dichiarati dai plugin DB (Cookie Manager, Form Builder, SEO Manager…) e genera una Privacy Policy completa (artt. 13-14 GDPR) pronta da pubblicare come pagina WordPress. Importa automaticamente la Cookie Policy dal DB Cookie Manager se installato. Niente servizi esterni, niente tracciamento.
- * Version:           1.1.2
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Davide Bertolino
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /* -------------------------------------------------------------------------
  * Costanti
  * ---------------------------------------------------------------------- */
-define( 'DBPH_VERSION',     '1.1.2' );
+define( 'DBPH_VERSION',     '1.3.0' );
 define( 'DBPH_FILE',        __FILE__ );
 define( 'DBPH_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'DBPH_URL',         plugin_dir_url( __FILE__ ) );
@@ -46,6 +46,8 @@ require_once DBPH_DIR . 'inc/class-policy-generator.php';
 require_once DBPH_DIR . 'inc/class-deprecated-aliases.php';
 require_once DBPH_DIR . 'inc/class-dsar.php';
 require_once DBPH_DIR . 'inc/class-dsar-log.php';
+// 1.3.0: aggregatore consensi via filter dbph_consents_register
+require_once DBPH_DIR . 'inc/class-consents-register.php';
 require_once DBPH_DIR . 'inc/class-admin.php';
 
 /**
@@ -59,6 +61,7 @@ function dbph_boot() {
 	DBPH_Policy_Archive::init();
 	DBPH_DSAR::init();
 	DBPH_DSAR_Log::init();
+	DBPH_Consents_Register::init();
 	DBPH_Admin::init();
 }
 add_action( 'plugins_loaded', 'dbph_boot', 5 );
@@ -79,6 +82,18 @@ add_action( 'init', 'dbph_load_textdomain' );
  * Activation / Deactivation
  * ---------------------------------------------------------------------- */
 register_activation_hook( __FILE__, 'dbph_activate' );
+register_deactivation_hook( __FILE__, 'dbph_deactivate' );
+
+/**
+ * Cleanup risorse al deactivate (cron, transient).
+ * Le tabelle e le option restano: la rimozione completa avviene solo da
+ * uninstall.php quando l'utente disinstalla il plugin.
+ */
+function dbph_deactivate() {
+	if ( class_exists( 'DBPH_DSAR_Log' ) ) {
+		DBPH_DSAR_Log::on_deactivate();
+	}
+}
 
 function dbph_activate() {
 	// Verifica requisiti minimi.

@@ -16,6 +16,18 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
+/* -------------------------------------------------------------------------
+ * Conservazione dati (1.3.1)
+ *
+ * Il log DSAR e l'archivio policy sono dati di accountability (art. 5.2
+ * GDPR): se l'admin ha attivato "Conserva i dati alla disinstallazione"
+ * nelle impostazioni, non rimuoviamo nulla. Alla reinstallazione del plugin
+ * tabelle e impostazioni vengono ritrovate intatte.
+ * ---------------------------------------------------------------------- */
+if ( get_option( 'dbph_preserve_data_on_uninstall' ) === '1' ) {
+	return;
+}
+
 global $wpdb;
 
 /* -------------------------------------------------------------------------
@@ -51,11 +63,19 @@ $options = array(
 	'dbph_show_rights_howto',
 	// 1.3.0: cache ID versione Privacy Policy corrente
 	'dbph_policy_current_version',
+	// 1.3.1: toggle conservazione dati alla disinstallazione
+	'dbph_preserve_data_on_uninstall',
+	// 1.6.0: piattaforme embed manuali + contitolarità pagine social
+	'dbph_embed_manual',
+	'dbph_social_pages_mention',
 );
 
 foreach ( $options as $opt ) {
 	delete_option( $opt );
 }
+
+// 1.6.0: transient cache scansione embed.
+delete_transient( 'dbph_embed_scan' );
 
 // 1.2.0: pulisci anche eventuali cron schedulati.
 $ts = wp_next_scheduled( 'dbph_dsar_cleanup_pending' );

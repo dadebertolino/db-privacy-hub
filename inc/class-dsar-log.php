@@ -272,7 +272,9 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		public static function cron_expire_pending() {
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
-			$cutoff = gmdate( 'Y-m-d H:i:s', strtotime( '-7 days' ) );
+			// requested_at è salvato in ora locale (current_time), quindi anche
+			// il cutoff va calcolato in ora locale per evitare sfasamenti di fuso.
+			$cutoff = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - 7 * DAY_IN_SECONDS );
 
 			$wpdb->query( $wpdb->prepare(
 				"UPDATE {$table}
@@ -346,8 +348,12 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 * Hook: export completato (file generato e inviato)
 		 * ================================================================== */
 
-		public static function on_export_done( $archive_url ) {
-			$request_id = isset( $_REQUEST['request_id'] ) ? absint( wp_unslash( $_REQUEST['request_id'] ) ) : 0;
+		public static function on_export_done( $request_id ) {
+			// L'action wp_privacy_personal_data_export_file passa direttamente
+			// l'ID della richiesta (vedi wp_privacy_generate_personal_data_export_file).
+			// Funziona quindi anche per export via WP-CLI o programmatici, non solo
+			// per il flusso AJAX admin.
+			$request_id = absint( $request_id );
 			if ( ! $request_id ) {
 				return;
 			}
@@ -387,12 +393,14 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 
 			$status = $request->status === 'request-completed' ? 'completed' : 'partial';
 
-			$items_removed  = (bool) get_post_meta( $request_id, '_export_data_grouped', true ); // best-effort
-			$items_retained = false;
-
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
+			// NOTA: WordPress non espone un aggregato affidabile di
+			// items_removed/items_retained a questo punto del ciclo di vita
+			// (le risposte dei singoli eraser non vengono persistite). Le due
+			// colonne restano al loro valore di default invece di essere
+			// valorizzate con euristiche inattendibili.
 			$erasers = (array) apply_filters( 'wp_privacy_personal_data_erasers', array() );
 			$wpdb->update(
 				$table,
@@ -400,11 +408,9 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 					'status'         => $status,
 					'completed_at'   => current_time( 'mysql' ),
 					'erasers_count'  => (int) count( $erasers ),
-					'items_removed'  => $items_removed ? 1 : 0,
-					'items_retained' => $items_retained ? 1 : 0,
 				),
 				array( 'request_id' => $request_id ),
-				array( '%s', '%s', '%d', '%d', '%d' ),
+				array( '%s', '%s', '%d' ),
 				array( '%d' )
 			);
 		}
@@ -459,9 +465,11 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			}
 
 			// Conteggi separati per scadenza GDPR e fonte manuale.
-			$now    = current_time( 'mysql' );
-			$soon   = gmdate( 'Y-m-d H:i:s', strtotime( '+10 days' ) );
-			$cutoff = gmdate( 'Y-m-d H:i:s', strtotime( '-30 days' ) );
+			// requested_at è in ora locale: i cutoff usano current_time('timestamp')
+			// per restare coerenti con calculate_deadline() e i badge in tabella.
+			$now_ts = current_time( 'timestamp' );
+			$soon   = gmdate( 'Y-m-d H:i:s', $now_ts + 10 * DAY_IN_SECONDS );
+			$cutoff = gmdate( 'Y-m-d H:i:s', $now_ts - 30 * DAY_IN_SECONDS );
 
 			$out['overdue'] = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$table}
@@ -523,6 +531,11 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			if ( empty( $args['email'] ) ) {
 				return new WP_Error( 'dbph_missing_email', __( 'Identificativo (email) obbligatorio.', 'db-privacy-hub' ) );
 			}
+			// Status fuori whitelist → fallback su 'received' (evita di rompere
+			// conteggi e label con valori arbitrari).
+			if ( ! array_key_exists( $args['status'], self::get_status_labels() ) ) {
+				$args['status'] = 'received';
+			}
 
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
@@ -567,7 +580,11 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			$update = array();
 			$format = array();
 			if ( isset( $args['status'] ) ) {
-				$update['status'] = sanitize_text_field( $args['status'] );
+				$status = sanitize_text_field( $args['status'] );
+				if ( ! array_key_exists( $status, self::get_status_labels() ) ) {
+					$status = $row->status; // Valore non valido → conserva l'attuale.
+				}
+				$update['status'] = $status;
 				$format[] = '%s';
 			}
 			if ( isset( $args['description'] ) ) {

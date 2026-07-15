@@ -15,6 +15,8 @@
  *           'icon'     => 'cookie',                            // chiave icona admin
  *           'count'    => function( $args = array() ) { ... }, // ritorna int
  *           'query'    => function( $args = array() ) { ... }, // ritorna array<row>
+ *                                                              // ($args può contenere 'limit':
+ *                                                              // le fonti dovrebbero rispettarlo)
  *           'export'   => function( $args = array() ) { ... }, // CSV streaming
  *       );
  *       return $sources;
@@ -141,9 +143,16 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 			$sources = self::get_sources();
 			if ( empty( $sources ) ) return array();
 
+			// Propaga il limite alle callback: dato che il risultato finale è
+			// comunque troncato a $limit, nessuna fonte ha bisogno di restituire
+			// più di $limit righe. Evita merge in memoria illimitati con log
+			// consensi di grandi dimensioni. Le fonti che ignorano args['limit']
+			// continuano a funzionare (il troncamento finale resta).
+			$args['limit'] = max( 1, (int) $limit );
+
 			// Se l'utente ha chiesto una singola fonte, limita.
 			if ( ! empty( $args['source'] ) && isset( $sources[ $args['source'] ] ) ) {
-				return self::query_for( $args['source'], $args );
+				return array_slice( self::query_for( $args['source'], $args ), 0, $args['limit'] );
 			}
 
 			$all = array();

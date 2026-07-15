@@ -30,12 +30,20 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 		public static function generate() {
 			$context = self::build_context();
 
+			// La sezione cookie viene renderizzata per prima: l'indice e la
+			// numerazione delle sezioni successive dipendono dalla sua presenza
+			// EFFETTIVA. Se il Cookie Manager è attivo ma non produce sezioni
+			// utili, has_cookie viene azzerato per evitare un indice che elenca
+			// una sezione inesistente e una numerazione sfasata.
+			$cookie_html           = self::section_cookie( $context );
+			$context['has_cookie'] = ( trim( $cookie_html ) !== '' );
+
 			$sections = array(
 				'header'        => self::section_header( $context ),
 				'titolare'      => self::section_titolare( $context ),
 				'finalita'      => self::section_finalita( $context ),
 				'trattamenti'   => self::section_trattamenti( $context ),
-				'cookie'        => self::section_cookie( $context ),
+				'cookie'        => $cookie_html,
 				'destinatari'   => self::section_destinatari( $context ),
 				'diritti'       => self::section_diritti( $context ),
 				'conservazione' => self::section_conservazione( $context ),
@@ -408,12 +416,41 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 				$num
 			) . '</h3>';
 
-			$has_responsabili = ! empty( $context['responsabili'] );
+			$responsabili = (array) $context['responsabili'];
+			$dest         = (array) $context['destinatari'];
 
-			if ( $has_responsabili ) {
-				$html .= '<p>' . esc_html__( 'Per le finalità sopra indicate, i dati personali sono comunicati ai seguenti soggetti, in qualità di responsabili del trattamento ai sensi dell\'art. 28 GDPR (vincolati da apposito contratto):', 'db-privacy-hub' ) . '</p>';
+			// 1.5.0: le due liste CONFLUISCONO entrambe nel documento, in due
+			// blocchi distinti (prima le dichiarazioni esplicite art. 28 con
+			// DPA, poi i destinatari rilevati automaticamente / autonomi
+			// titolari). Fino alla 1.4.0 le dichiarazioni esplicite
+			// NASCONDEVANO la detection automatica: su un e-commerce con
+			// responsabili dichiarati i gateway di pagamento sparivano dalla
+			// policy.
+			//
+			// Dedup per nome (case-insensitive): se un soggetto rilevato è
+			// già stato dichiarato esplicitamente, prevale la dichiarazione
+			// esplicita (è il fatto giuridico) e la voce rilevata viene
+			// omessa.
+			$declared_names = array();
+			foreach ( $responsabili as $r ) {
+				if ( ! empty( $r['nome'] ) ) {
+					$declared_names[] = strtolower( trim( $r['nome'] ) );
+				}
+			}
+			$dest = array_values( array_filter( $dest, function ( $d ) use ( $declared_names ) {
+				return empty( $d['name'] ) || ! in_array( strtolower( trim( $d['name'] ) ), $declared_names, true );
+			} ) );
+
+			$html .= '<p>' . esc_html__( 'Per le finalità sopra indicate, i dati personali possono essere comunicati ai soggetti elencati di seguito. I dati non vengono diffusi.', 'db-privacy-hub' ) . '</p>';
+
+			/* -----------------------------------------------------------------
+			 * Blocco 1: responsabili del trattamento (art. 28) dichiarati.
+			 * -------------------------------------------------------------- */
+			if ( ! empty( $responsabili ) ) {
+				$html .= '<h4>' . esc_html__( 'Responsabili del trattamento (art. 28 GDPR)', 'db-privacy-hub' ) . '</h4>';
+				$html .= '<p>' . esc_html__( 'Soggetti che trattano i dati per conto del titolare, vincolati da apposito contratto di nomina:', 'db-privacy-hub' ) . '</p>';
 				$html .= '<ul>';
-				foreach ( $context['responsabili'] as $r ) {
+				foreach ( $responsabili as $r ) {
 					$html .= '<li><strong>' . esc_html( $r['nome'] ) . '</strong>';
 					$details = array();
 					if ( ! empty( $r['ruolo'] ) ) {
@@ -439,27 +476,41 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 					$html .= '</li>';
 				}
 				$html .= '</ul>';
-			} else {
-				$html .= '<p>' . esc_html__( 'I dati personali raccolti possono essere comunicati ai seguenti destinatari, in qualità di responsabili del trattamento o autonomi titolari, esclusivamente per le finalità sopra indicate:', 'db-privacy-hub' ) . '</p>';
-				$html .= '<ul>';
-				$html .= '<li>' . esc_html__( 'Fornitore di hosting del sito web (responsabile del trattamento ai sensi dell\'art. 28 GDPR).', 'db-privacy-hub' ) . '</li>';
-
-				$dest = $context['destinatari'];
-				if ( ! empty( $dest ) ) {
-					foreach ( $dest as $d ) {
-						$html .= '<li><strong>' . esc_html( $d['name'] ) . '</strong> — ' . esc_html( $d['description'] );
-						if ( ! empty( $d['country'] ) ) {
-							$html .= ' <em>(' . esc_html__( 'Paese:', 'db-privacy-hub' ) . ' ' . esc_html( $d['country'] ) . ')</em>';
-						}
-						$html .= '</li>';
-					}
-				}
-
-				$html .= '<li>' . esc_html__( 'Soggetti a cui la comunicazione sia necessaria per adempiere ad obblighi di legge (autorità giudiziaria, organi di vigilanza).', 'db-privacy-hub' ) . '</li>';
-				$html .= '</ul>';
 			}
 
-			$html .= '<p>' . esc_html__( 'I dati non vengono diffusi e non vengono trasferiti a paesi extra-UE al di fuori di quanto eventualmente specificato sopra.', 'db-privacy-hub' ) . '</p>';
+			/* -----------------------------------------------------------------
+			 * Blocco 2: altri destinatari (autonomi titolari e soggetti
+			 * rilevati automaticamente). Sempre presente: contiene almeno la
+			 * voce sugli obblighi di legge, il fallback hosting quando non
+			 * dichiarato esplicitamente, e i servizi rilevati (gateway di
+			 * pagamento, SMTP, reCAPTCHA, webhook…).
+			 * -------------------------------------------------------------- */
+			$html .= '<h4>' . esc_html__( 'Altri destinatari', 'db-privacy-hub' ) . '</h4>';
+			$html .= '<p>' . esc_html__( 'Soggetti che ricevono i dati in qualità di autonomi titolari del trattamento o per obbligo di legge:', 'db-privacy-hub' ) . '</p>';
+			$html .= '<ul>';
+
+			// Fallback hosting: solo se non risulta già una dichiarazione
+			// esplicita (di norma l'hosting è un responsabile art. 28 e
+			// andrebbe dichiarato nel blocco precedente).
+			if ( empty( $responsabili ) ) {
+				$html .= '<li>' . esc_html__( 'Fornitore di hosting del sito web (responsabile del trattamento ai sensi dell\'art. 28 GDPR).', 'db-privacy-hub' ) . '</li>';
+			}
+
+			foreach ( $dest as $d ) {
+				if ( empty( $d['name'] ) ) {
+					continue;
+				}
+				$html .= '<li><strong>' . esc_html( $d['name'] ) . '</strong> — ' . esc_html( $d['description'] ?? '' );
+				if ( ! empty( $d['country'] ) ) {
+					$html .= ' <em>(' . esc_html__( 'Paese:', 'db-privacy-hub' ) . ' ' . esc_html( $d['country'] ) . ')</em>';
+				}
+				$html .= '</li>';
+			}
+
+			$html .= '<li>' . esc_html__( 'Soggetti a cui la comunicazione sia necessaria per adempiere ad obblighi di legge (autorità giudiziaria, organi di vigilanza).', 'db-privacy-hub' ) . '</li>';
+			$html .= '</ul>';
+
+			$html .= '<p>' . esc_html__( 'I dati non vengono trasferiti a paesi extra-UE al di fuori di quanto specificato sopra per i singoli soggetti.', 'db-privacy-hub' ) . '</p>';
 
 			return $html;
 		}

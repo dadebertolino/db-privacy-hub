@@ -3,7 +3,7 @@
  * Plugin Name:       DB Privacy Hub
  * Plugin URI:        https://www.davidebertolino.it/progetti/db-privacy-hub/
  * Description:       Hub privacy unificato per l'ecosistema plugin DB. Raccoglie i trattamenti dichiarati dai plugin DB (Cookie Manager, Form Builder, SEO Manager…) e genera una Privacy Policy completa (artt. 13-14 GDPR) pronta da pubblicare come pagina WordPress. Importa automaticamente la Cookie Policy dal DB Cookie Manager se installato. Niente servizi esterni, niente tracciamento.
- * Version:           1.3.0
+ * Version:           1.6.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Davide Bertolino
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /* -------------------------------------------------------------------------
  * Costanti
  * ---------------------------------------------------------------------- */
-define( 'DBPH_VERSION',     '1.3.0' );
+define( 'DBPH_VERSION',     '1.6.0' );
 define( 'DBPH_FILE',        __FILE__ );
 define( 'DBPH_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'DBPH_URL',         plugin_dir_url( __FILE__ ) );
@@ -48,6 +48,10 @@ require_once DBPH_DIR . 'inc/class-dsar.php';
 require_once DBPH_DIR . 'inc/class-dsar-log.php';
 // 1.3.0: aggregatore consensi via filter dbph_consents_register
 require_once DBPH_DIR . 'inc/class-consents-register.php';
+// 1.4.0: ponte privacy per WooCommerce (si attiva solo se Woo è presente)
+require_once DBPH_DIR . 'inc/class-woo-bridge.php';
+// 1.6.0: detection e dichiarazione contenuti social/embed
+require_once DBPH_DIR . 'inc/class-embed-bridge.php';
 require_once DBPH_DIR . 'inc/class-admin.php';
 
 /**
@@ -62,6 +66,8 @@ function dbph_boot() {
 	DBPH_DSAR::init();
 	DBPH_DSAR_Log::init();
 	DBPH_Consents_Register::init();
+	DBPH_Woo_Bridge::init();
+	DBPH_Embed_Bridge::init();
 	DBPH_Admin::init();
 }
 add_action( 'plugins_loaded', 'dbph_boot', 5 );

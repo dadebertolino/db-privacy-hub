@@ -49,6 +49,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			add_action( 'admin_post_dbph_create_page',         array( __CLASS__, 'handle_create_page' ) );
 			add_action( 'admin_post_dbph_download_md',         array( __CLASS__, 'handle_download_md' ) );
 			add_action( 'admin_post_dbph_save_responsabili',   array( __CLASS__, 'handle_save_responsabili' ) );
+			// 1.5.0: aggiunta responsabile da modello precompilato.
+			add_action( 'admin_post_dbph_add_resp_template',   array( __CLASS__, 'handle_add_resp_template' ) );
 			// 1.2.0: handler per DSAR manuali ed export CSV.
 			add_action( 'admin_post_dbph_save_manual_dsar',    array( __CLASS__, 'handle_save_manual_dsar' ) );
 			add_action( 'admin_post_dbph_delete_manual_dsar',  array( __CLASS__, 'handle_delete_manual_dsar' ) );
@@ -181,6 +183,13 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'page_error'        => array( 'error',   __( 'Errore durante la creazione/aggiornamento della pagina.', 'db-privacy-hub' ) ),
 				'no_titolare'       => array( 'warning', __( 'Compila prima i dati del titolare, poi rigenera il documento.', 'db-privacy-hub' ) ),
 				'responsabili_saved' => array( 'success', __( 'Elenco responsabili esterni aggiornato.', 'db-privacy-hub' ) ),
+				// 1.2.0 (fix 1.5.0: erano usati nei redirect ma mancavano dalla mappa).
+				'manual_saved'      => array( 'success', __( 'Richiesta DSAR manuale registrata.', 'db-privacy-hub' ) ),
+				'manual_updated'    => array( 'success', __( 'Richiesta DSAR manuale aggiornata.', 'db-privacy-hub' ) ),
+				'manual_deleted'    => array( 'success', __( 'Richiesta DSAR manuale eliminata.', 'db-privacy-hub' ) ),
+				// 1.5.0: modelli rapidi responsabili.
+				'template_added'    => array( 'success', __( 'Voce precompilata aggiunta: sostituisci il segnaposto con la ragione sociale reale e salva.', 'db-privacy-hub' ) ),
+				'template_error'    => array( 'error',   __( 'Modello non valido.', 'db-privacy-hub' ) ),
 			);
 			if ( ! isset( $map[ $msg ] ) ) {
 				return;
@@ -358,6 +367,63 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 									<span>
 										<strong><?php esc_html_e( 'Includi istruzioni operative "Come esercitare i tuoi diritti"', 'db-privacy-hub' ); ?></strong>
 										<p class="description" style="margin-top: 4px;"><?php esc_html_e( 'Aggiunge alla Privacy Policy un blocco con le istruzioni passo passo per esercitare i diritti GDPR (procedura, identificazione, tempi di risposta, diritto di reclamo al Garante). Consigliato per maggiore trasparenza verso l\'utente.', 'db-privacy-hub' ); ?></p>
+									</span>
+								</label>
+							</div>
+							<?php
+							// 1.3.1: toggle conservazione dati alla disinstallazione.
+							$preserve = get_option( 'dbph_preserve_data_on_uninstall', '0' );
+							?>
+							<div class="db-ui-field" style="grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--db-light-2);">
+								<label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+									<input type="checkbox" id="dbph_preserve_data" name="dbph[preserve_data_on_uninstall]" value="1" <?php checked( $preserve === '1' ); ?>>
+									<span>
+										<strong><?php esc_html_e( 'Conserva i dati alla disinstallazione', 'db-privacy-hub' ); ?></strong>
+										<p class="description" style="margin-top: 4px;"><?php esc_html_e( 'Se attivo, la disinstallazione del plugin NON rimuove il log DSAR, l\'archivio delle versioni della Privacy Policy e le impostazioni. Consigliato: il registro delle richieste DSAR è documentazione di accountability (art. 5.2 GDPR) che potresti dover esibire anche dopo aver rimosso il plugin.', 'db-privacy-hub' ); ?></p>
+									</span>
+								</label>
+							</div>
+						</div>
+					</div>
+
+					<?php // 1.6.0: piattaforme social/embed — detection + abilitazione manuale. ?>
+					<h2><?php esc_html_e( 'Social e contenuti incorporati', 'db-privacy-hub' ); ?></h2>
+					<div class="db-ui-card">
+						<div class="db-ui-card-body">
+							<p class="description" style="margin-top:0">
+								<?php esc_html_e( 'Le piattaforme rilevate automaticamente nei contenuti pubblicati sono già dichiarate in policy (contrassegnate sotto come "rilevata"). Spunta manualmente le piattaforme che la scansione non può vedere: embed inseriti dal tema, share button, contenuti gestiti da page builder. I semplici link ai profili social NON vanno dichiarati: la dichiarazione riguarda solo contenuti incorporati che caricano risorse della piattaforma.', 'db-privacy-hub' ); ?>
+							</p>
+							<?php
+							$emb_detected = class_exists( 'DBPH_Embed_Bridge' ) ? DBPH_Embed_Bridge::scan_content() : array();
+							$emb_manual   = class_exists( 'DBPH_Embed_Bridge' ) ? DBPH_Embed_Bridge::get_manual_platforms() : array();
+							$emb_all      = class_exists( 'DBPH_Embed_Bridge' ) ? DBPH_Embed_Bridge::get_platforms() : array();
+							?>
+							<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
+								<?php foreach ( $emb_all as $emb_key => $emb_p ) :
+									$is_detected = in_array( $emb_key, $emb_detected, true );
+									$is_manual   = in_array( $emb_key, $emb_manual, true );
+									?>
+									<label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+										<input type="checkbox" name="dbph[embed_manual][]" value="<?php echo esc_attr( $emb_key ); ?>" <?php checked( $is_manual ); ?> <?php disabled( $is_detected && ! $is_manual ); ?>>
+										<span>
+											<?php echo esc_html( $emb_p['label'] ); ?>
+											<?php if ( $is_detected ) : ?>
+												<em class="description">(<?php esc_html_e( 'rilevata nei contenuti', 'db-privacy-hub' ); ?>)</em>
+											<?php endif; ?>
+										</span>
+									</label>
+								<?php endforeach; ?>
+							</div>
+							<p class="description">
+								<?php esc_html_e( 'Le piattaforme rilevate sono dichiarate comunque, anche senza spunta (il checkbox disabilitato lo segnala). Ricorda: gli embed richiedono il blocco preventivo tramite il banner del DB Cookie Manager fino al consenso.', 'db-privacy-hub' ); ?>
+							</p>
+							<?php $social_pages = get_option( 'dbph_social_pages_mention', '0' ); ?>
+							<div class="db-ui-field" style="padding-top:8px;border-top:1px solid var(--db-light-2)">
+								<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+									<input type="checkbox" name="dbph[social_pages_mention]" value="1" <?php checked( $social_pages === '1' ); ?>>
+									<span>
+										<strong><?php esc_html_e( 'Il titolare gestisce pagine/profili social', 'db-privacy-hub' ); ?></strong>
+										<p class="description" style="margin-top:4px"><?php esc_html_e( 'Aggiunge alla policy il paragrafo sulla contitolarità per i dati statistici delle pagine social (Page Insights — art. 26 GDPR, CGUE C-210/16) con rinvio alle informative delle piattaforme.', 'db-privacy-hub' ); ?></p>
 									</span>
 								</label>
 							</div>
@@ -603,6 +669,26 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$show_howto = isset( $_POST['dbph']['show_rights_howto'] ) ? '1' : '0';
 			update_option( 'dbph_show_rights_howto', $show_howto );
 
+			// 1.3.1: toggle conservazione dati alla disinstallazione (default OFF).
+			$preserve = isset( $_POST['dbph']['preserve_data_on_uninstall'] ) ? '1' : '0';
+			update_option( 'dbph_preserve_data_on_uninstall', $preserve );
+
+			// 1.6.0: piattaforme embed abilitate a mano + contitolarità pagine social.
+			$embed_manual = array();
+			if ( isset( $_POST['dbph']['embed_manual'] ) && is_array( $_POST['dbph']['embed_manual'] ) ) {
+				$valid_platforms = class_exists( 'DBPH_Embed_Bridge' ) ? array_keys( DBPH_Embed_Bridge::get_platforms() ) : array();
+				foreach ( wp_unslash( $_POST['dbph']['embed_manual'] ) as $pk ) {
+					$pk = sanitize_key( $pk );
+					if ( in_array( $pk, $valid_platforms, true ) ) {
+						$embed_manual[] = $pk;
+					}
+				}
+			}
+			update_option( 'dbph_embed_manual', $embed_manual );
+
+			$social_pages = isset( $_POST['dbph']['social_pages_mention'] ) ? '1' : '0';
+			update_option( 'dbph_social_pages_mention', $social_pages );
+
 			DBPH_Register::flush_cache();
 
 			$redirect = add_query_arg(
@@ -780,7 +866,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$html = DBPH_Policy_Generator::generate();
 			$md   = DBPH_Policy_Generator::html_to_markdown( $html );
 
-			$filename = 'privacy-policy-' . sanitize_file_name( get_bloginfo( 'name' ) ) . '-' . date( 'Ymd-His' ) . '.md';
+			$filename = 'privacy-policy-' . sanitize_file_name( get_bloginfo( 'name' ) ) . '-' . gmdate( 'Ymd-His' ) . '.md';
 			nocache_headers();
 			header( 'Content-Type: text/markdown; charset=utf-8' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
@@ -807,6 +893,41 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 					<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
 					<span><?php esc_html_e( 'Esempi tipici: provider di hosting, gestore email transazionale (es. Mailgun, SendGrid), agenzia esterna che gestisce il sito, fornitore di backup, eventuale CDN. Non vanno qui i meri "destinatari" che sono autonomi titolari (es. Google Analytics).', 'db-privacy-hub' ); ?></span>
 				</div>
+
+				<?php // 1.5.0: aggiunta rapida da modello precompilato. ?>
+				<div class="db-ui-card" style="margin-bottom:16px">
+					<div class="db-ui-card-body">
+						<h2 style="margin-top:0"><?php esc_html_e( 'Aggiungi da modello', 'db-privacy-hub' ); ?></h2>
+						<p class="description"><?php esc_html_e( 'Checklist dei responsabili più comuni: scegli una categoria per aggiungere una voce precompilata, poi sostituisci il segnaposto con la ragione sociale reale del soggetto nominato. Ricorda: ogni voce presuppone un atto di nomina ex art. 28 GDPR già sottoscritto.', 'db-privacy-hub' ); ?></p>
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+							<input type="hidden" name="action" value="dbph_add_resp_template">
+							<?php wp_nonce_field( 'dbph_add_resp_template', '_dbph_nonce' ); ?>
+							<select name="dbph_template">
+								<?php foreach ( DBPH_Responsabili::get_template_labels() as $key => $label ) : ?>
+									<option value="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<button type="submit" class="db-ui-btn"><?php esc_html_e( 'Aggiungi voce precompilata', 'db-privacy-hub' ); ?></button>
+						</form>
+					</div>
+				</div>
+
+				<?php
+				// 1.5.0: avviso se ci sono ancora segnaposto non sostituiti.
+				$has_placeholder = false;
+				foreach ( DBPH_Responsabili::get_all() as $r_check ) {
+					if ( strpos( $r_check['nome'], '[' ) !== false ) {
+						$has_placeholder = true;
+						break;
+					}
+				}
+				if ( $has_placeholder ) :
+					?>
+					<div class="db-ui-alert db-ui-alert-warning">
+						<span class="db-ui-alert-icon" aria-hidden="true">⚠️</span>
+						<span><?php esc_html_e( 'Una o più voci contengono ancora un segnaposto tra parentesi quadre: sostituiscilo con la ragione sociale reale prima di generare la Privacy Policy.', 'db-privacy-hub' ); ?></span>
+					</div>
+				<?php endif; ?>
 
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="db-ui-form">
 					<input type="hidden" name="action" value="dbph_save_responsabili">
@@ -873,6 +994,27 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			wp_safe_redirect( add_query_arg(
 				array( 'page' => self::PAGE_RESPONSABILI, 'dbph_msg' => 'responsabili_saved' ),
+				admin_url( 'admin.php' )
+			) );
+			exit;
+		}
+
+		/**
+		 * Handler: aggiunge una voce responsabile precompilata da modello.
+		 *
+		 * @since 1.5.0
+		 */
+		public static function handle_add_resp_template() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'Permesso negato.', 'db-privacy-hub' ), '', array( 'response' => 403 ) );
+			}
+			check_admin_referer( 'dbph_add_resp_template', '_dbph_nonce' );
+
+			$key = isset( $_POST['dbph_template'] ) ? sanitize_key( wp_unslash( $_POST['dbph_template'] ) ) : '';
+			$ok  = $key !== '' && DBPH_Responsabili::add_from_template( $key );
+
+			wp_safe_redirect( add_query_arg(
+				array( 'page' => self::PAGE_RESPONSABILI, 'dbph_msg' => $ok ? 'template_added' : 'template_error' ),
 				admin_url( 'admin.php' )
 			) );
 			exit;
@@ -1149,6 +1291,27 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 		 * Handler: salvataggio DSAR manuale (insert o update)
 		 * ================================================================== */
 
+		/**
+		 * Normalizza un datetime da input utente (formato HTML5 o libero) in
+		 * formato MySQL. Restituisce $fallback se l'input è vuoto o non parsabile.
+		 *
+		 * @since 1.3.1
+		 * @param string      $raw
+		 * @param string|null $fallback
+		 * @return string|null
+		 */
+		private static function normalize_datetime( $raw, $fallback = null ) {
+			$raw = sanitize_text_field( (string) $raw );
+			if ( $raw === '' ) {
+				return $fallback;
+			}
+			$ts = strtotime( $raw );
+			if ( false === $ts ) {
+				return $fallback;
+			}
+			return gmdate( 'Y-m-d H:i:s', $ts );
+		}
+
 		public static function handle_save_manual_dsar() {
 			if ( ! current_user_can( 'manage_options' ) ) {
 				wp_die( esc_html__( 'Permesso negato.', 'db-privacy-hub' ), '', array( 'response' => 403 ) );
@@ -1157,16 +1320,22 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			$id = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
 
-			// Normalizza datetime HTML5 → MySQL
-			$req_at = isset( $_POST['requested_at'] ) ? sanitize_text_field( wp_unslash( $_POST['requested_at'] ) ) : '';
-			$req_at = $req_at ? date( 'Y-m-d H:i:s', strtotime( $req_at ) ) : current_time( 'mysql' );
+			// Normalizza datetime HTML5 → MySQL. Input non parsabile → fallback
+			// (senza validazione, strtotime()===false produrrebbe epoch 1970).
+			$req_at  = self::normalize_datetime( isset( $_POST['requested_at'] ) ? wp_unslash( $_POST['requested_at'] ) : '', current_time( 'mysql' ) );
+			$comp_at = self::normalize_datetime( isset( $_POST['completed_at'] ) ? wp_unslash( $_POST['completed_at'] ) : '', null );
 
-			$comp_at_raw = isset( $_POST['completed_at'] ) ? sanitize_text_field( wp_unslash( $_POST['completed_at'] ) ) : '';
-			$comp_at = $comp_at_raw ? date( 'Y-m-d H:i:s', strtotime( $comp_at_raw ) ) : null;
+			// Il campo accetta un'email o un identificativo generico: se è
+			// un'email valida viene normalizzata, altrimenti resta testo.
+			$identifier = isset( $_POST['email'] ) ? sanitize_text_field( wp_unslash( $_POST['email'] ) ) : '';
+			$as_email   = sanitize_email( $identifier );
+			if ( is_email( $as_email ) ) {
+				$identifier = $as_email;
+			}
 
 			$args = array(
 				'request_type' => isset( $_POST['request_type'] ) ? sanitize_text_field( wp_unslash( $_POST['request_type'] ) ) : '',
-				'email'        => isset( $_POST['email'] ) ? sanitize_text_field( wp_unslash( $_POST['email'] ) ) : '',
+				'email'        => $identifier,
 				'channel'      => isset( $_POST['channel'] ) ? sanitize_text_field( wp_unslash( $_POST['channel'] ) ) : 'email',
 				'description'  => isset( $_POST['description'] ) ? wp_unslash( $_POST['description'] ) : '',
 				'status'       => isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : 'received',
@@ -1244,7 +1413,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$status_labels  = DBPH_DSAR_Log::get_status_labels();
 			$channel_labels = DBPH_DSAR_Log::get_channel_labels();
 
-			$filename = sprintf( 'dbph-dsar-log-%s.csv', date( 'Y-m-d-His' ) );
+			$filename = sprintf( 'dbph-dsar-log-%s.csv', gmdate( 'Y-m-d-His' ) );
 			nocache_headers();
 			header( 'Content-Type: text/csv; charset=utf-8' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
@@ -1557,7 +1726,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			// Per il CSV recuperiamo tutto, senza il limite di 200.
 			$rows = DBPH_Consents_Register::query_all( $args, 50000 );
 
-			$filename = sprintf( 'dbph-consents-register-%s.csv', date( 'Y-m-d-His' ) );
+			$filename = sprintf( 'dbph-consents-register-%s.csv', gmdate( 'Y-m-d-His' ) );
 			nocache_headers();
 			header( 'Content-Type: text/csv; charset=utf-8' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );

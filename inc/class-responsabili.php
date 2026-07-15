@@ -116,5 +116,114 @@ if ( ! class_exists( 'DBPH_Responsabili' ) ) {
 		public static function has_any() {
 			return count( self::get_all() ) > 0;
 		}
+
+		/* =====================================================================
+		 * Modelli rapidi (1.5.0)
+		 * ================================================================== */
+
+		/**
+		 * Modelli precompilati per i responsabili art. 28 più comuni di un
+		 * sito / e-commerce. Il campo `nome` è volutamente un placeholder:
+		 * l'admin DEVE sostituirlo con la ragione sociale reale del soggetto
+		 * nominato — il modello serve solo a non dimenticare la categoria e
+		 * a precompilare ruolo e note.
+		 *
+		 * @since 1.5.0
+		 * @return array<string,array>
+		 */
+		public static function get_templates() {
+			$templates = array(
+				'commercialista' => array(
+					'nome'     => __( '[Nome studio / commercialista]', 'db-privacy-hub' ),
+					'ruolo'    => __( 'Consulenza fiscale e contabile', 'db-privacy-hub' ),
+					'paese'    => __( 'Italia', 'db-privacy-hub' ),
+					'extra_ue' => false,
+					'garanzie' => '',
+					'note'     => __( 'Tenuta della contabilità ed elaborazione dei documenti fiscali relativi agli ordini. Verificare che l\'atto di nomina ex art. 28 sia stato sottoscritto prima di pubblicare la policy.', 'db-privacy-hub' ),
+				),
+				'webmaster' => array(
+					'nome'     => __( '[Nome agenzia / webmaster]', 'db-privacy-hub' ),
+					'ruolo'    => __( 'Gestione e manutenzione tecnica del sito', 'db-privacy-hub' ),
+					'paese'    => __( 'Italia', 'db-privacy-hub' ),
+					'extra_ue' => false,
+					'garanzie' => '',
+					'note'     => __( 'Accesso all\'amministrazione del sito e ai dati in esso contenuti per attività di sviluppo, manutenzione e assistenza.', 'db-privacy-hub' ),
+				),
+				'hosting' => array(
+					'nome'     => __( '[Nome provider hosting]', 'db-privacy-hub' ),
+					'ruolo'    => __( 'Hosting del sito web', 'db-privacy-hub' ),
+					'paese'    => '',
+					'extra_ue' => false,
+					'garanzie' => '',
+					'note'     => __( 'Conservazione dei dati del sito sui propri server. Indicare paese ed eventuali garanzie se extra-UE.', 'db-privacy-hub' ),
+				),
+				'fatturazione' => array(
+					'nome'     => __( '[Servizio fatturazione elettronica]', 'db-privacy-hub' ),
+					'ruolo'    => __( 'Fatturazione elettronica', 'db-privacy-hub' ),
+					'paese'    => __( 'Italia', 'db-privacy-hub' ),
+					'extra_ue' => false,
+					'garanzie' => '',
+					'note'     => __( 'Emissione, trasmissione allo SdI e conservazione a norma delle fatture elettroniche.', 'db-privacy-hub' ),
+				),
+				'email' => array(
+					'nome'     => __( '[Provider email transazionale]', 'db-privacy-hub' ),
+					'ruolo'    => __( 'Invio email transazionali', 'db-privacy-hub' ),
+					'paese'    => '',
+					'extra_ue' => false,
+					'garanzie' => '',
+					'note'     => __( 'Recapito delle email del sito (conferme ordine, notifiche). Indicare paese ed eventuali garanzie se extra-UE.', 'db-privacy-hub' ),
+				),
+				'backup' => array(
+					'nome'     => __( '[Servizio di backup esterno]', 'db-privacy-hub' ),
+					'ruolo'    => __( 'Backup e disaster recovery', 'db-privacy-hub' ),
+					'paese'    => '',
+					'extra_ue' => false,
+					'garanzie' => '',
+					'note'     => __( 'Copie di sicurezza del sito e del database, inclusi i dati personali in essi contenuti.', 'db-privacy-hub' ),
+				),
+			);
+
+			/**
+			 * Filtra i modelli rapidi di responsabili esterni.
+			 *
+			 * @since 1.5.0
+			 * @param array $templates
+			 */
+			return (array) apply_filters( 'dbph_responsabili_templates', $templates );
+		}
+
+		/**
+		 * Etichette leggibili dei modelli, per la UI.
+		 *
+		 * @since 1.5.0
+		 * @return array<string,string>
+		 */
+		public static function get_template_labels() {
+			return array(
+				'commercialista' => __( 'Commercialista / consulente fiscale', 'db-privacy-hub' ),
+				'webmaster'      => __( 'Webmaster / agenzia web', 'db-privacy-hub' ),
+				'hosting'        => __( 'Provider di hosting', 'db-privacy-hub' ),
+				'fatturazione'   => __( 'Fatturazione elettronica', 'db-privacy-hub' ),
+				'email'          => __( 'Email transazionale', 'db-privacy-hub' ),
+				'backup'         => __( 'Backup esterno', 'db-privacy-hub' ),
+			);
+		}
+
+		/**
+		 * Aggiunge in coda all'elenco una voce precompilata da modello.
+		 *
+		 * @since 1.5.0
+		 * @param string $template_key
+		 * @return bool  false se il modello non esiste.
+		 */
+		public static function add_from_template( $template_key ) {
+			$templates = self::get_templates();
+			if ( ! isset( $templates[ $template_key ] ) ) {
+				return false;
+			}
+			$entries   = self::get_all();
+			$entries[] = self::sanitize_entry( $templates[ $template_key ] );
+			return self::save_all( $entries );
+		}
 	}
 }

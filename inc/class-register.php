@@ -93,10 +93,12 @@ if ( ! class_exists( 'DBPH_Register' ) ) {
 				if ( empty( $entry['id'] ) ) {
 					continue;
 				}
-				$prefix = strtolower( substr( $entry['id'], 0, 4 ) );
-				if ( '_' === substr( $prefix, -1 ) ) {
-					$prefix = substr( $prefix, 0, -1 );
-				}
+				// Prefisso = tutto ciò che precede il primo underscore. Il vecchio
+				// substr(id, 0, 4) troncava i prefissi a 5+ caratteri (es. dbseo_*
+				// diventava "dbse" e le voci del SEO Manager venivano raggruppate male).
+				$id     = strtolower( (string) $entry['id'] );
+				$pos    = strpos( $id, '_' );
+				$prefix = ( false === $pos ) ? $id : substr( $id, 0, $pos );
 				if ( ! isset( $counts[ $prefix ] ) ) {
 					$counts[ $prefix ] = 0;
 				}

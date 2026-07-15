@@ -20,6 +20,7 @@ Il **DB Privacy Hub** raccoglie automaticamente le dichiarazioni di ogni plugin 
 - **Generatore Privacy Policy completo** — composizione automatica di un documento conforme agli artt. 13-14 GDPR
 - **Form titolare** — nome, P.IVA, indirizzo, email, PEC, DPO; salvati una volta, riusati ovunque
 - **Detection automatica destinatari** — riconosce reCAPTCHA configurato, plugin SMTP attivi, webhook host configurati nei form
+- **Ponte WooCommerce** — con WooCommerce attivo, dichiara automaticamente i trattamenti e-commerce (ordini, fatturazione, account, pagamenti) e rileva i gateway di pagamento abilitati come destinatari
 - **Importazione sezioni cookie** — se il DB Cookie Manager è installato, le sezioni cookie del documento vengono importate automaticamente (niente duplicazione di logica)
 - **Integrazione DSAR** — se il DB Form Builder 2.5.0+ è installato, la sezione "Diritti dell'interessato" menziona la procedura DSAR automatica
 - **Pubblicazione one-click** — crea (o rigenera) una pagina WordPress con titolo e slug configurabili, e la imposta come `wp_page_for_privacy_policy` core
@@ -121,6 +122,41 @@ GPL v2 or later. Vedi `LICENSE`.
 Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'ecosistema plugin DB.
 
 ### Changelog
+
+#### 1.6.0 — Bridge social e contenuti incorporati _(2026)_
+
+- **Nuovo modulo `DBPH_Embed_Bridge`** — rileva le piattaforme terze i cui contenuti sono incorporati nel sito (YouTube, Vimeo, Facebook, Instagram, TikTok, X, LinkedIn, Spotify, Google Maps) tramite blocchi Gutenberg embed, iframe nei contenuti e plugin noti; i semplici link ai profili sono volutamente esclusi (un link non trasferisce dati)
+- **Abilitazione manuale** — checkbox nella pagina "Genera Privacy Policy" per dichiarare a mano le piattaforme che la scansione non può vedere (embed del tema, share button, page builder); le piattaforme rilevate automaticamente sono contrassegnate e dichiarate comunque
+- **Voci di registro automatiche** — "Contenuti incorporati da piattaforme terze" (base: consenso art. 6.1.a, con rinvio al banner cookie) e "Remarketing e misurazione pubblicitaria" se è attivo un plugin pixel noto (PixelYourSite, Meta pixel, Facebook for WooCommerce, TikTok)
+- **Piattaforme come destinatari** — descrittori precompilati con titolarità, paese e garanzie extra-UE (SCC/DPF), integrati nel merge destinatari della 1.5.0
+- **Contitolarità pagine social** — checkbox che aggiunge alla policy il paragrafo sui dati Insights delle pagine social (art. 26 GDPR, CGUE C-210/16)
+- La scansione dei contenuti è cachata (transient 12h, invalidato al salvataggio); il bridge è disattivabile con `add_filter( 'dbph_embed_bridge_enabled', '__return_false' )`; catalogo piattaforme estendibile via `dbph_embed_platforms`
+- Fuori scope (dichiarato): social login e share button lato tema — per questi ultimi esiste appunto l'abilitazione manuale
+
+#### 1.5.0 — Modelli responsabili + merge destinatari _(2026)_
+
+- **Merge delle liste nella sezione "Destinatari"** — la Privacy Policy ora mostra SEMPRE due blocchi distinti: "Responsabili del trattamento (art. 28 GDPR)" con le dichiarazioni esplicite, e "Altri destinatari" con autonomi titolari e servizi rilevati automaticamente (gateway di pagamento, SMTP, reCAPTCHA, webhook). Fino alla 1.4.0 le dichiarazioni esplicite nascondevano la detection automatica: su un e-commerce con responsabili dichiarati i gateway sparivano dal documento
+- **Dedup per nome** — se un soggetto rilevato è già dichiarato esplicitamente, prevale la dichiarazione (il fatto giuridico) e la voce rilevata viene omessa
+- **Modelli rapidi di responsabili** — la pagina "Responsabili esterni" include una checklist di categorie tipiche (commercialista, webmaster/agenzia, hosting, fatturazione elettronica, email transazionale, backup) con voci precompilate a un click; segnaposto da sostituire con la ragione sociale reale, avviso in pagina finché restano segnaposto non sostituiti, filter `dbph_responsabili_templates` per estendere l'elenco
+- **Fix notices** — i messaggi di conferma delle azioni DSAR manuali (registrata/aggiornata/eliminata) erano usati nei redirect ma mancavano dalla mappa e non venivano mai mostrati
+
+#### 1.4.0 — Ponte privacy WooCommerce _(2026)_
+
+- **Nuovo modulo `DBPH_Woo_Bridge`** — se WooCommerce è attivo, il plugin dichiara automaticamente sul registro i trattamenti e-commerce standard: gestione ordini e spedizione (base contrattuale), fatturazione e obblighi fiscali (obbligo di legge, 10 anni), account cliente (solo se la registrazione è abilitata), pagamenti online (solo se esistono gateway online abilitati) e telemetria WooCommerce verso Automattic (solo se l'opzione di tracking è attiva)
+- **Detection gateway di pagamento** — i gateway online abilitati vengono aggiunti ai destinatari della Privacy Policy come autonomi titolari, con descrittori precompilati per Stripe, PayPal, Klarna, Nexi/XPay, Braintree, Mollie, Amazon Pay e Satispay (paese e garanzie di trasferimento incluse) e descrittore generico per i gateway non riconosciuti; i metodi offline (contrassegno, bonifico, assegno) sono esclusi
+- **Sezione diritti integrata** — la Privacy Policy generata include il chiarimento sul limite alla cancellazione dei dati fiscali/contabili (art. 17.3.b GDPR) con spiegazione dell'anonimizzazione degli ordini
+- Il ponte è disattivabile con `add_filter( 'dbph_woo_bridge_enabled', '__return_false' )`
+- Fuori scope (da dichiarare manualmente): corrieri (Responsabili esterni) e consensi marketing delle estensioni
+
+#### 1.3.1 — Bugfix e hardening _(2026)_
+
+- **Fix timezone modulo DSAR** — cron di scadenza e contatori "in scadenza / scadute" ora usano l'ora locale del sito, coerentemente con i timestamp salvati (prima erano sfasati dell'offset del fuso orario)
+- **Fix hook export** — il completamento dell'export dati personali viene registrato usando l'ID richiesta passato dall'hook core (funziona anche per export via WP-CLI); rimossa l'euristica inattendibile su `items_removed` nel completamento erase
+- **Validazione DSAR manuale** — datetime non parsabili non producono più date epoch 1970; lo status è validato contro la whitelist; email normalizzata se valida
+- **Fix contatore per plugin** — il raggruppamento delle voci del registro trattamenti riconosce correttamente prefissi di lunghezza arbitraria (es. `dbseo_*`)
+- **Fix numerazione Privacy Policy** — se il Cookie Manager è attivo ma non produce sezioni cookie, indice e numerazione delle sezioni restano coerenti
+- **Registro consensi** — il limite di righe viene propagato alle fonti (`args['limit']`) per evitare merge in memoria illimitati
+- **Nuovo: conservazione dati alla disinstallazione** — opzione "Conserva i dati alla disinstallazione" (default OFF) che preserva log DSAR, archivio policy e impostazioni per finalità di accountability (art. 5.2 GDPR)
 
 #### 1.3.0 — Registro consensi unificato + version ID Privacy Policy _(2026)_
 

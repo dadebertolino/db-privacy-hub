@@ -23,11 +23,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 /* -------------------------------------------------------------------------
  * Costanti
  * ---------------------------------------------------------------------- */
-define( 'DBPH_VERSION',     '1.6.0' );
-define( 'DBPH_FILE',        __FILE__ );
-define( 'DBPH_DIR',         plugin_dir_path( __FILE__ ) );
-define( 'DBPH_URL',         plugin_dir_url( __FILE__ ) );
-define( 'DBPH_BASENAME',    plugin_basename( __FILE__ ) );
+define( 'DBPH_VERSION', '1.6.0' );
+define( 'DBPH_FILE', __FILE__ );
+define( 'DBPH_DIR', plugin_dir_path( __FILE__ ) );
+define( 'DBPH_URL', plugin_dir_url( __FILE__ ) );
+define( 'DBPH_BASENAME', plugin_basename( __FILE__ ) );
 define( 'DBPH_TEXT_DOMAIN', 'db-privacy-hub' );
 
 /* -------------------------------------------------------------------------

@@ -42,23 +42,23 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				return;
 			}
 
-			add_action( 'admin_menu',                          array( __CLASS__, 'register_menu' ) );
-			add_action( 'admin_enqueue_scripts',               array( __CLASS__, 'enqueue_assets' ) );
+			add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
+			add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
 
-			add_action( 'admin_post_dbph_save_titolare',       array( __CLASS__, 'handle_save_titolare' ) );
-			add_action( 'admin_post_dbph_create_page',         array( __CLASS__, 'handle_create_page' ) );
-			add_action( 'admin_post_dbph_download_md',         array( __CLASS__, 'handle_download_md' ) );
-			add_action( 'admin_post_dbph_save_responsabili',   array( __CLASS__, 'handle_save_responsabili' ) );
+			add_action( 'admin_post_dbph_save_titolare', array( __CLASS__, 'handle_save_titolare' ) );
+			add_action( 'admin_post_dbph_create_page', array( __CLASS__, 'handle_create_page' ) );
+			add_action( 'admin_post_dbph_download_md', array( __CLASS__, 'handle_download_md' ) );
+			add_action( 'admin_post_dbph_save_responsabili', array( __CLASS__, 'handle_save_responsabili' ) );
 			// 1.5.0: aggiunta responsabile da modello precompilato.
-			add_action( 'admin_post_dbph_add_resp_template',   array( __CLASS__, 'handle_add_resp_template' ) );
+			add_action( 'admin_post_dbph_add_resp_template', array( __CLASS__, 'handle_add_resp_template' ) );
 			// 1.2.0: handler per DSAR manuali ed export CSV.
-			add_action( 'admin_post_dbph_save_manual_dsar',    array( __CLASS__, 'handle_save_manual_dsar' ) );
-			add_action( 'admin_post_dbph_delete_manual_dsar',  array( __CLASS__, 'handle_delete_manual_dsar' ) );
-			add_action( 'admin_post_dbph_export_dsar_csv',     array( __CLASS__, 'handle_export_dsar_csv' ) );
+			add_action( 'admin_post_dbph_save_manual_dsar', array( __CLASS__, 'handle_save_manual_dsar' ) );
+			add_action( 'admin_post_dbph_delete_manual_dsar', array( __CLASS__, 'handle_delete_manual_dsar' ) );
+			add_action( 'admin_post_dbph_export_dsar_csv', array( __CLASS__, 'handle_export_dsar_csv' ) );
 			// 1.3.0: handler per export Registro consensi
 			add_action( 'admin_post_dbph_export_consents_csv', array( __CLASS__, 'handle_export_consents_csv' ) );
 
-			add_action( 'admin_notices',                       array( __CLASS__, 'admin_notices' ) );
+			add_action( 'admin_notices', array( __CLASS__, 'admin_notices' ) );
 		}
 
 		/* =====================================================================
@@ -180,7 +180,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'titolare_saved'    => array( 'success', __( 'Dati del titolare salvati.', 'db-privacy-hub' ) ),
 				'page_created'      => array( 'success', __( 'Pagina Privacy Policy creata e impostata come pagina privacy del sito.', 'db-privacy-hub' ) ),
 				'page_updated'      => array( 'success', __( 'Pagina Privacy Policy aggiornata.', 'db-privacy-hub' ) ),
-				'page_error'        => array( 'error',   __( 'Errore durante la creazione/aggiornamento della pagina.', 'db-privacy-hub' ) ),
+				'page_error'        => array( 'error', __( 'Errore durante la creazione/aggiornamento della pagina.', 'db-privacy-hub' ) ),
 				'no_titolare'       => array( 'warning', __( 'Compila prima i dati del titolare, poi rigenera il documento.', 'db-privacy-hub' ) ),
 				'responsabili_saved' => array( 'success', __( 'Elenco responsabili esterni aggiornato.', 'db-privacy-hub' ) ),
 				// 1.2.0 (fix 1.5.0: erano usati nei redirect ma mancavano dalla mappa).
@@ -189,7 +189,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'manual_deleted'    => array( 'success', __( 'Richiesta DSAR manuale eliminata.', 'db-privacy-hub' ) ),
 				// 1.5.0: modelli rapidi responsabili.
 				'template_added'    => array( 'success', __( 'Voce precompilata aggiunta: sostituisci il segnaposto con la ragione sociale reale e salva.', 'db-privacy-hub' ) ),
-				'template_error'    => array( 'error',   __( 'Modello non valido.', 'db-privacy-hub' ) ),
+				'template_error'    => array( 'error', __( 'Modello non valido.', 'db-privacy-hub' ) ),
 			);
 			if ( ! isset( $map[ $msg ] ) ) {
 				return;
@@ -233,21 +233,22 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 						</span>
 					</div>
 
-					<?php foreach ( $register as $entry ) :
+					<?php
+					foreach ( $register as $entry ) :
 						if ( ! is_array( $entry ) || empty( $entry['label'] ) ) {
 							continue;
 						}
 						$is_legacy = ! empty( $entry['_legacy'] );
 						$is_active = ( ( $entry['status'] ?? '' ) === 'active' );
-					?>
+						?>
 						<div class="db-ui-card">
 							<div class="db-ui-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
 								<h3 style="margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 									<?php echo esc_html( $entry['label'] ); ?>
 									<?php if ( $is_legacy ) : ?>
 										<span class="db-ui-badge db-ui-badge-warning"
-										      title="<?php esc_attr_e( 'Voce dichiarata via filter legacy dbseo_processing_register. Il plugin che la dichiara dovrebbe essere aggiornato.', 'db-privacy-hub' ); ?>"
-										      style="font-size:11px;font-weight:normal">
+												title="<?php esc_attr_e( 'Voce dichiarata via filter legacy dbseo_processing_register. Il plugin che la dichiara dovrebbe essere aggiornato.', 'db-privacy-hub' ); ?>"
+												style="font-size:11px;font-weight:normal">
 											⚠️ <?php esc_html_e( 'Filter legacy', 'db-privacy-hub' ); ?>
 										</span>
 									<?php endif; ?>
@@ -399,7 +400,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 							$emb_all      = class_exists( 'DBPH_Embed_Bridge' ) ? DBPH_Embed_Bridge::get_platforms() : array();
 							?>
 							<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
-								<?php foreach ( $emb_all as $emb_key => $emb_p ) :
+								<?php
+								foreach ( $emb_all as $emb_key => $emb_p ) :
 									$is_detected = in_array( $emb_key, $emb_detected, true );
 									$is_manual   = in_array( $emb_key, $emb_manual, true );
 									?>
@@ -453,10 +455,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 								printf(
 									/* translators: 1: titolo pagina, 2: link edit, 3: link visualizza */
 									wp_kses(
+										/* translators: 1: titolo pagina, 2: URL modifica, 3: URL visualizzazione */
 										__( 'Pagina attualmente collegata: <strong>%1$s</strong> — <a href="%2$s">modifica</a> · <a href="%3$s" target="_blank" rel="noopener">visualizza</a>', 'db-privacy-hub' ),
 										array(
 											'strong' => array(),
-											'a'      => array( 'href' => array(), 'target' => array(), 'rel' => array() ),
+											'a'      => array(
+												'href' => array(),
+												'target' => array(),
+												'rel' => array(),
+											),
 										)
 									),
 									esc_html( $current_page->post_title ),
@@ -488,8 +495,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 										<optgroup label="<?php esc_attr_e( 'Pagine esistenti suggerite', 'db-privacy-hub' ); ?>">
 											<?php foreach ( $candidates as $cand ) : ?>
 												<option value="<?php echo (int) $cand->ID; ?>"
-												        data-title="<?php echo esc_attr( $cand->post_title ); ?>"
-												        <?php selected( $selected_target, (string) $cand->ID ); ?>>
+														data-title="<?php echo esc_attr( $cand->post_title ); ?>"
+														<?php selected( $selected_target, (string) $cand->ID ); ?>>
 													<?php
 													printf(
 														/* translators: 1: titolo pagina, 2: ID, 3: stato */
@@ -548,7 +555,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 						if (sel.value && sel.value !== 'new') {
 							var opt = sel.options[sel.selectedIndex];
 							var title = opt.getAttribute('data-title') || ('ID ' + sel.value);
-							var msg = <?php echo wp_json_encode( __( 'Stai per sovrascrivere il contenuto della pagina "%s". L\'operazione è reversibile dalle revisioni WordPress della pagina ma agisce immediatamente. Continuare?', 'db-privacy-hub' ) ); ?>;
+							var msg = <?php /* translators: %s: titolo della pagina */ echo wp_json_encode( __( 'Stai per sovrascrivere il contenuto della pagina "%s". L\'operazione è reversibile dalle revisioni WordPress della pagina ma agisce immediatamente. Continuare?', 'db-privacy-hub' ) ); ?>;
 							if (!window.confirm(msg.replace('%s', title))) {
 								e.preventDefault();
 								return false;
@@ -582,13 +589,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$ids = array();
 
 			foreach ( $keywords as $kw ) {
-				$matches = get_posts( array(
-					'post_type'      => 'page',
-					'post_status'    => array( 'publish', 'draft', 'private' ),
-					'posts_per_page' => 30,
-					's'              => $kw,
-					'fields'         => 'ids',
-				) );
+				$matches = get_posts(
+					array(
+						'post_type'      => 'page',
+						'post_status'    => array( 'publish', 'draft', 'private' ),
+						'posts_per_page' => 30,
+						's'              => $kw,
+						'fields'         => 'ids',
+					)
+				);
 				foreach ( $matches as $id ) {
 					$ids[ (int) $id ] = true;
 				}
@@ -625,9 +634,12 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			}
 
 			// Ordina per titolo.
-			usort( $out, function ( $a, $b ) {
-				return strcasecmp( (string) $a->post_title, (string) $b->post_title );
-			} );
+			usort(
+				$out,
+				function ( $a, $b ) {
+					return strcasecmp( (string) $a->post_title, (string) $b->post_title );
+				}
+			);
 
 			return $out;
 		}
@@ -642,10 +654,11 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			}
 			check_admin_referer( self::NONCE_SAVE, '_dbph_nonce' );
 
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- ogni campo è sanitizzato singolarmente a valle.
 			$in = isset( $_POST['dbph'] ) && is_array( $_POST['dbph'] ) ? wp_unslash( $_POST['dbph'] ) : array();
 
-			update_option( 'dbph_titolare_nome',      sanitize_text_field( $in['nome'] ?? '' ) );
-			update_option( 'dbph_titolare_piva',      sanitize_text_field( $in['piva'] ?? '' ) );
+			update_option( 'dbph_titolare_nome', sanitize_text_field( $in['nome'] ?? '' ) );
+			update_option( 'dbph_titolare_piva', sanitize_text_field( $in['piva'] ?? '' ) );
 			update_option( 'dbph_titolare_indirizzo', sanitize_text_field( $in['indirizzo'] ?? '' ) );
 
 			$email = sanitize_email( $in['email'] ?? '' );
@@ -654,7 +667,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$pec = sanitize_email( $in['pec'] ?? '' );
 			update_option( 'dbph_titolare_pec', is_email( $pec ) ? $pec : '' );
 
-			update_option( 'dbph_titolare_dpo',  sanitize_text_field( $in['dpo'] ?? '' ) );
+			update_option( 'dbph_titolare_dpo', sanitize_text_field( $in['dpo'] ?? '' ) );
 
 			// Page settings.
 			$title = sanitize_text_field( $in['page_title'] ?? '' );
@@ -677,6 +690,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$embed_manual = array();
 			if ( isset( $_POST['dbph']['embed_manual'] ) && is_array( $_POST['dbph']['embed_manual'] ) ) {
 				$valid_platforms = class_exists( 'DBPH_Embed_Bridge' ) ? array_keys( DBPH_Embed_Bridge::get_platforms() ) : array();
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- ogni chiave è sanitize_key()'d e validata contro il catalogo qui sotto.
 				foreach ( wp_unslash( $_POST['dbph']['embed_manual'] ) as $pk ) {
 					$pk = sanitize_key( $pk );
 					if ( in_array( $pk, $valid_platforms, true ) ) {
@@ -692,7 +706,10 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			DBPH_Register::flush_cache();
 
 			$redirect = add_query_arg(
-				array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'titolare_saved' ),
+				array(
+					'page' => self::PAGE_GENERATOR,
+					'dbph_msg' => 'titolare_saved',
+				),
 				admin_url( 'admin.php' )
 			);
 			wp_safe_redirect( $redirect );
@@ -710,10 +727,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			check_admin_referer( self::NONCE_CREATE, '_dbph_nonce' );
 
 			if ( ! DBPH_Policy_Generator::is_titolare_configured() ) {
-				wp_safe_redirect( add_query_arg(
-					array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'no_titolare' ),
-					admin_url( 'admin.php' )
-				) );
+				wp_safe_redirect(
+					add_query_arg(
+						array(
+							'page' => self::PAGE_GENERATOR,
+							'dbph_msg' => 'no_titolare',
+						),
+						admin_url( 'admin.php' )
+					)
+				);
 				exit;
 			}
 
@@ -747,10 +769,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 		private static function do_overwrite_page( $page_id, $content ) {
 			$page = get_post( $page_id );
 			if ( ! $page || $page->post_type !== 'page' || $page->post_status === 'trash' ) {
-				wp_safe_redirect( add_query_arg(
-					array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'page_error' ),
-					admin_url( 'admin.php' )
-				) );
+				wp_safe_redirect(
+					add_query_arg(
+						array(
+							'page' => self::PAGE_GENERATOR,
+							'dbph_msg' => 'page_error',
+						),
+						admin_url( 'admin.php' )
+					)
+				);
 				exit;
 			}
 
@@ -780,10 +807,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			);
 
 			if ( is_wp_error( $updated ) || 0 === $updated ) {
-				wp_safe_redirect( add_query_arg(
-					array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'page_error' ),
-					admin_url( 'admin.php' )
-				) );
+				wp_safe_redirect(
+					add_query_arg(
+						array(
+							'page' => self::PAGE_GENERATOR,
+							'dbph_msg' => 'page_error',
+						),
+						admin_url( 'admin.php' )
+					)
+				);
 				exit;
 			}
 
@@ -804,10 +836,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				);
 			}
 
-			wp_safe_redirect( add_query_arg(
-				array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'page_updated' ),
-				admin_url( 'admin.php' )
-			) );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page' => self::PAGE_GENERATOR,
+						'dbph_msg' => 'page_updated',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
 			exit;
 		}
 
@@ -832,10 +869,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			);
 
 			if ( is_wp_error( $new_id ) || 0 === $new_id ) {
-				wp_safe_redirect( add_query_arg(
-					array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'page_error' ),
-					admin_url( 'admin.php' )
-				) );
+				wp_safe_redirect(
+					add_query_arg(
+						array(
+							'page' => self::PAGE_GENERATOR,
+							'dbph_msg' => 'page_error',
+						),
+						admin_url( 'admin.php' )
+					)
+				);
 				exit;
 			}
 
@@ -846,10 +888,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				DBPH_Policy_Archive::save( $content, __( 'Pubblicazione iniziale', 'db-privacy-hub' ) );
 			}
 
-			wp_safe_redirect( add_query_arg(
-				array( 'page' => self::PAGE_GENERATOR, 'dbph_msg' => 'page_created' ),
-				admin_url( 'admin.php' )
-			) );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page' => self::PAGE_GENERATOR,
+						'dbph_msg' => 'page_created',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
 			exit;
 		}
 
@@ -881,7 +928,16 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 		public static function render_responsabili() {
 			$resp = DBPH_Responsabili::get_all();
 			// Aggiungo sempre una riga vuota per nuovi inserimenti.
-			$resp[] = array( 'id' => '', 'nome' => '', 'ruolo' => '', 'paese' => '', 'extra_ue' => false, 'garanzie' => '', 'dpa_url' => '', 'note' => '' );
+			$resp[] = array(
+				'id' => '',
+				'nome' => '',
+				'ruolo' => '',
+				'paese' => '',
+				'extra_ue' => false,
+				'garanzie' => '',
+				'dpa_url' => '',
+				'note' => '',
+			);
 			?>
 			<div class="wrap db-ui-wrap">
 				<h1><?php esc_html_e( 'Responsabili esterni del trattamento (art. 28 GDPR)', 'db-privacy-hub' ); ?></h1>
@@ -989,13 +1045,19 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			}
 			check_admin_referer( self::NONCE_RESP, '_dbph_nonce' );
 
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- ogni voce è sanitizzata in DBPH_Responsabili::sanitize_entry().
 			$raw = isset( $_POST['dbph_resp'] ) && is_array( $_POST['dbph_resp'] ) ? wp_unslash( $_POST['dbph_resp'] ) : array();
 			DBPH_Responsabili::save_all( $raw );
 
-			wp_safe_redirect( add_query_arg(
-				array( 'page' => self::PAGE_RESPONSABILI, 'dbph_msg' => 'responsabili_saved' ),
-				admin_url( 'admin.php' )
-			) );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page' => self::PAGE_RESPONSABILI,
+						'dbph_msg' => 'responsabili_saved',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
 			exit;
 		}
 
@@ -1013,10 +1075,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$key = isset( $_POST['dbph_template'] ) ? sanitize_key( wp_unslash( $_POST['dbph_template'] ) ) : '';
 			$ok  = $key !== '' && DBPH_Responsabili::add_from_template( $key );
 
-			wp_safe_redirect( add_query_arg(
-				array( 'page' => self::PAGE_RESPONSABILI, 'dbph_msg' => $ok ? 'template_added' : 'template_error' ),
-				admin_url( 'admin.php' )
-			) );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page' => self::PAGE_RESPONSABILI,
+						'dbph_msg' => $ok ? 'template_added' : 'template_error',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
 			exit;
 		}
 
@@ -1048,9 +1115,9 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				// Notice di feedback per le azioni manual.
 				if ( ! empty( $_GET['dbph_msg'] ) ) {
 					$messages = array(
-						'manual_saved'   => __( 'Richiesta DSAR manuale salvata correttamente.',   'db-privacy-hub' ),
-						'manual_updated' => __( 'Richiesta DSAR aggiornata.',                       'db-privacy-hub' ),
-						'manual_deleted' => __( 'Richiesta DSAR eliminata.',                        'db-privacy-hub' ),
+						'manual_saved'   => __( 'Richiesta DSAR manuale salvata correttamente.', 'db-privacy-hub' ),
+						'manual_updated' => __( 'Richiesta DSAR aggiornata.', 'db-privacy-hub' ),
+						'manual_deleted' => __( 'Richiesta DSAR eliminata.', 'db-privacy-hub' ),
 					);
 					$key = sanitize_key( $_GET['dbph_msg'] );
 					if ( isset( $messages[ $key ] ) ) {
@@ -1094,12 +1161,18 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 							</tr>
 						</thead>
 						<tbody>
-							<?php foreach ( $entries as $e ) :
+							<?php
+							foreach ( $entries as $e ) :
 								$deadline   = DBPH_DSAR_Log::calculate_deadline( $e );
 								$type_label = $type_labels[ $e->request_type ] ?? $e->request_type;
 								$status_lbl = $status_labels[ $e->status ] ?? $e->status;
-							?>
-								<tr<?php if ( $deadline['class'] === 'overdue' ) echo ' style="background:#fef2f2"'; ?>>
+								?>
+								<tr
+								<?php
+								if ( $deadline['class'] === 'overdue' ) {
+									echo ' style="background:#fef2f2"';}
+								?>
+								>
 									<td>#<?php echo (int) $e->id; ?></td>
 									<td>
 										<?php if ( $e->source === 'manual' ) : ?>
@@ -1115,12 +1188,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 									<td>
 										<?php
 										$badge_class = 'db-ui-badge-muted';
-										if ( $e->status === 'completed' ) $badge_class = 'db-ui-badge-success';
-										elseif ( $e->status === 'rejected' || $e->status === 'expired' ) $badge_class = 'db-ui-badge-warning';
+										if ( $e->status === 'completed' ) {
+											$badge_class = 'db-ui-badge-success';
+										} elseif ( $e->status === 'rejected' || $e->status === 'expired' ) {
+											$badge_class = 'db-ui-badge-warning';
+										}
 										?>
 										<span class="db-ui-badge <?php echo esc_attr( $badge_class ); ?>"><?php echo esc_html( $status_lbl ); ?></span>
 									</td>
-									<td><?php echo esc_html( $e->requested_at ?: '—' ); ?></td>
+									<td><?php echo esc_html( $e->requested_at ? $e->requested_at : '—' ); ?></td>
 									<td>
 										<?php if ( $deadline['class'] === 'overdue' ) : ?>
 											<span style="color:#dc2626;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
@@ -1132,7 +1208,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 											<span style="color:#9ca3af">—</span>
 										<?php endif; ?>
 									</td>
-									<td><?php echo esc_html( $e->completed_at ?: '—' ); ?></td>
+									<td><?php echo esc_html( $e->completed_at ? $e->completed_at : '—' ); ?></td>
 									<td>
 										<?php if ( $e->source === 'manual' ) : ?>
 											<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_DSAR_NEW . '&id=' . (int) $e->id ) ); ?>"><?php esc_html_e( 'Modifica', 'db-privacy-hub' ); ?></a>
@@ -1166,12 +1242,12 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$current = array(
 				'request_type' => $is_edit ? $row->request_type : '',
 				'email'        => '',  // mai visibile in chiaro: solo input nuovo
-				'channel'      => $is_edit ? $row->channel      : 'email',
-				'description'  => $is_edit ? $row->description  : '',
-				'status'       => $is_edit ? $row->status       : 'received',
+				'channel'      => $is_edit ? $row->channel : 'email',
+				'description'  => $is_edit ? $row->description : '',
+				'status'       => $is_edit ? $row->status : 'received',
 				'requested_at' => $is_edit ? $row->requested_at : current_time( 'mysql' ),
 				'completed_at' => $is_edit ? $row->completed_at : '',
-				'notes'        => $is_edit ? $row->notes        : '',
+				'notes'        => $is_edit ? $row->notes : '',
 			);
 			?>
 			<div class="wrap db-ui-wrap">
@@ -1241,7 +1317,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 								$manual_statuses = array( 'received', 'in_progress', 'completed', 'rejected' );
 								foreach ( $manual_statuses as $st ) :
 									$lbl = $status_labels[ $st ] ?? $st;
-								?>
+									?>
 									<option value="<?php echo esc_attr( $st ); ?>" <?php selected( $current['status'], $st ); ?>><?php echo esc_html( $lbl ); ?></option>
 								<?php endforeach; ?>
 							</select>
@@ -1281,10 +1357,14 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 		 * Converte una datetime MySQL (Y-m-d H:i:s) in formato <input type="datetime-local">.
 		 */
 		private static function to_html5_datetime( $mysql_dt ) {
-			if ( empty( $mysql_dt ) ) return '';
+			if ( empty( $mysql_dt ) ) {
+				return '';
+			}
 			$ts = strtotime( $mysql_dt );
-			if ( ! $ts ) return '';
-			return date( 'Y-m-d\TH:i', $ts );
+			if ( ! $ts ) {
+				return '';
+			}
+			return gmdate( 'Y-m-d\TH:i', $ts );
 		}
 
 		/* =====================================================================
@@ -1322,7 +1402,9 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			// Normalizza datetime HTML5 → MySQL. Input non parsabile → fallback
 			// (senza validazione, strtotime()===false produrrebbe epoch 1970).
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitizzato e validato dentro normalize_datetime().
 			$req_at  = self::normalize_datetime( isset( $_POST['requested_at'] ) ? wp_unslash( $_POST['requested_at'] ) : '', current_time( 'mysql' ) );
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitizzato e validato dentro normalize_datetime().
 			$comp_at = self::normalize_datetime( isset( $_POST['completed_at'] ) ? wp_unslash( $_POST['completed_at'] ) : '', null );
 
 			// Il campo accetta un'email o un identificativo generico: se è
@@ -1337,30 +1419,40 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'request_type' => isset( $_POST['request_type'] ) ? sanitize_text_field( wp_unslash( $_POST['request_type'] ) ) : '',
 				'email'        => $identifier,
 				'channel'      => isset( $_POST['channel'] ) ? sanitize_text_field( wp_unslash( $_POST['channel'] ) ) : 'email',
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- passa da wp_kses_post() in DBPH_DSAR_Log::insert_manual().
 				'description'  => isset( $_POST['description'] ) ? wp_unslash( $_POST['description'] ) : '',
 				'status'       => isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : 'received',
 				'requested_at' => $req_at,
 				'completed_at' => $comp_at,
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- passa da wp_kses_post() in DBPH_DSAR_Log::insert_manual().
 				'notes'        => isset( $_POST['notes'] ) ? wp_unslash( $_POST['notes'] ) : '',
 			);
 
 			if ( $id > 0 ) {
 				// Update
-				$result = DBPH_DSAR_Log::update_manual( $id, array(
-					'status'       => $args['status'],
-					'description'  => $args['description'],
-					'channel'      => $args['channel'],
-					'requested_at' => $args['requested_at'],
-					'completed_at' => $args['completed_at'],
-					'notes'        => $args['notes'],
-				) );
+				$result = DBPH_DSAR_Log::update_manual(
+					$id,
+					array(
+						'status'       => $args['status'],
+						'description'  => $args['description'],
+						'channel'      => $args['channel'],
+						'requested_at' => $args['requested_at'],
+						'completed_at' => $args['completed_at'],
+						'notes'        => $args['notes'],
+					)
+				);
 				if ( is_wp_error( $result ) ) {
 					wp_die( esc_html( $result->get_error_message() ), '', array( 'back_link' => true ) );
 				}
-				wp_safe_redirect( add_query_arg(
-					array( 'page' => self::PAGE_DSAR_LOG, 'dbph_msg' => 'manual_updated' ),
-					admin_url( 'admin.php' )
-				) );
+				wp_safe_redirect(
+					add_query_arg(
+						array(
+							'page' => self::PAGE_DSAR_LOG,
+							'dbph_msg' => 'manual_updated',
+						),
+						admin_url( 'admin.php' )
+					)
+				);
 				exit;
 			}
 
@@ -1369,10 +1461,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			if ( is_wp_error( $result ) ) {
 				wp_die( esc_html( $result->get_error_message() ), '', array( 'back_link' => true ) );
 			}
-			wp_safe_redirect( add_query_arg(
-				array( 'page' => self::PAGE_DSAR_LOG, 'dbph_msg' => 'manual_saved' ),
-				admin_url( 'admin.php' )
-			) );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page' => self::PAGE_DSAR_LOG,
+						'dbph_msg' => 'manual_saved',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
 			exit;
 		}
 
@@ -1391,10 +1488,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			if ( is_wp_error( $result ) ) {
 				wp_die( esc_html( $result->get_error_message() ), '', array( 'back_link' => true ) );
 			}
-			wp_safe_redirect( add_query_arg(
-				array( 'page' => self::PAGE_DSAR_LOG, 'dbph_msg' => 'manual_deleted' ),
-				admin_url( 'admin.php' )
-			) );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page' => self::PAGE_DSAR_LOG,
+						'dbph_msg' => 'manual_deleted',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
 			exit;
 		}
 
@@ -1423,11 +1525,24 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			fputs( $out, "\xEF\xBB\xBF" );
 
 			// Header
-			fputcsv( $out, array(
-				'ID', 'Fonte', 'Email mascherata', 'Hash email', 'Tipo richiesta',
-				'Stato', 'Canale', 'Data richiesta', 'Data conferma', 'Data completamento',
-				'Scadenza GDPR (gg)', 'Descrizione', 'Note',
-			) );
+			fputcsv(
+				$out,
+				array(
+					'ID',
+					'Fonte',
+					'Email mascherata',
+					'Hash email',
+					'Tipo richiesta',
+					'Stato',
+					'Canale',
+					'Data richiesta',
+					'Data conferma',
+					'Data completamento',
+					'Scadenza GDPR (gg)',
+					'Descrizione',
+					'Note',
+				)
+			);
 
 			$source_labels = array(
 				'wp_native'       => 'WP nativo',
@@ -1437,21 +1552,24 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			foreach ( $entries as $e ) {
 				$deadline = DBPH_DSAR_Log::calculate_deadline( $e );
-				fputcsv( $out, array(
-					$e->id,
-					$source_labels[ $e->source ] ?? $e->source,
-					$e->email_display,
-					$e->email_hash,
-					$type_labels[ $e->request_type ] ?? $e->request_type,
-					$status_labels[ $e->status ] ?? $e->status,
-					$channel_labels[ $e->channel ] ?? $e->channel,
-					$e->requested_at,
-					$e->confirmed_at,
-					$e->completed_at,
-					$deadline['days'],
-					$e->description,
-					$e->notes,
-				) );
+				fputcsv(
+					$out,
+					array(
+						$e->id,
+						$source_labels[ $e->source ] ?? $e->source,
+						$e->email_display,
+						$e->email_hash,
+						$type_labels[ $e->request_type ] ?? $e->request_type,
+						$status_labels[ $e->status ] ?? $e->status,
+						$channel_labels[ $e->channel ] ?? $e->channel,
+						$e->requested_at,
+						$e->confirmed_at,
+						$e->completed_at,
+						$deadline['days'],
+						$e->description,
+						$e->notes,
+					)
+				);
 			}
 
 			fclose( $out );
@@ -1475,7 +1593,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 					<?php esc_html_e( 'Ogni pubblicazione/rigenerazione della Privacy Policy salva uno snapshot. Permette di dimostrare quale versione era pubblicata in una certa data.', 'db-privacy-hub' ); ?>
 				</p>
 
-				<?php if ( $diff_a && $diff_b ) :
+				<?php
+				if ( $diff_a && $diff_b ) :
 					$diff_html = DBPH_Policy_Archive::diff( $diff_a, $diff_b );
 					?>
 					<h2><?php esc_html_e( 'Differenze', 'db-privacy-hub' ); ?>
@@ -1503,8 +1622,10 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 								<?php echo wp_kses_post( $snap->content ); ?>
 							</div>
 						</div>
-					<?php endif;
-				else : ?>
+						<?php
+					endif;
+				else :
+					?>
 					<?php if ( empty( $entries ) ) : ?>
 						<div class="db-ui-alert db-ui-alert-info">
 							<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
@@ -1528,17 +1649,42 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 								$entry_count = count( $entries );
 								foreach ( $entries as $idx => $e ) :
 									$prev_id = isset( $entries[ $idx + 1 ] ) ? (int) $entries[ $idx + 1 ]->id : 0;
-								?>
+									?>
 									<tr>
 										<td>#<?php echo (int) $e->id; ?></td>
 										<td><?php echo esc_html( $e->created_at ); ?></td>
-										<td><?php echo esc_html( $e->note ?: '—' ); ?></td>
+										<td><?php echo esc_html( $e->note ? $e->note : '—' ); ?></td>
 										<td><?php echo esc_html( size_format( (int) $e->bytes ) ); ?></td>
 										<td><code style="font-size:10px"><?php echo esc_html( substr( $e->content_hash, 0, 12 ) ); ?>…</code></td>
 										<td>
-											<a href="<?php echo esc_url( add_query_arg( array( 'page' => self::PAGE_POLICY_HIST, 'view' => (int) $e->id ), admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'Visualizza', 'db-privacy-hub' ); ?></a>
+											<a href="
+											<?php
+											echo esc_url(
+												add_query_arg(
+													array(
+														'page' => self::PAGE_POLICY_HIST,
+														'view' => (int) $e->id,
+													),
+													admin_url( 'admin.php' )
+												)
+											);
+											?>
+														"><?php esc_html_e( 'Visualizza', 'db-privacy-hub' ); ?></a>
 											<?php if ( $prev_id ) : ?>
-												| <a href="<?php echo esc_url( add_query_arg( array( 'page' => self::PAGE_POLICY_HIST, 'diff_a' => $prev_id, 'diff_b' => (int) $e->id ), admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'Diff vs precedente', 'db-privacy-hub' ); ?></a>
+												| <a href="
+												<?php
+												echo esc_url(
+													add_query_arg(
+														array(
+															'page' => self::PAGE_POLICY_HIST,
+															'diff_a' => $prev_id,
+															'diff_b' => (int) $e->id,
+														),
+														admin_url( 'admin.php' )
+													)
+												);
+												?>
+															"><?php esc_html_e( 'Diff vs precedente', 'db-privacy-hub' ); ?></a>
 											<?php endif; ?>
 										</td>
 									</tr>
@@ -1561,9 +1707,9 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			// Filtri da query string.
 			$args = array(
 				'date_from' => isset( $_GET['date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['date_from'] ) ) : '',
-				'date_to'   => isset( $_GET['date_to'] )   ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) )   : '',
-				'subject'   => isset( $_GET['subject'] )   ? sanitize_text_field( wp_unslash( $_GET['subject'] ) )   : '',
-				'source'    => isset( $_GET['source'] )    ? sanitize_key( $_GET['source'] )                          : '',
+				'date_to'   => isset( $_GET['date_to'] ) ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) ) : '',
+				'subject'   => isset( $_GET['subject'] ) ? sanitize_text_field( wp_unslash( $_GET['subject'] ) ) : '',
+				'source'    => isset( $_GET['source'] ) ? sanitize_key( $_GET['source'] ) : '',
 			);
 
 			$rows = empty( $sources ) ? array() : DBPH_Consents_Register::query_all( $args, 200 );
@@ -1572,10 +1718,17 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				<h1>
 					<?php esc_html_e( 'Registro consensi', 'db-privacy-hub' ); ?>
 					<?php if ( ! empty( $rows ) ) : ?>
-						<a href="<?php echo esc_url( wp_nonce_url(
-							add_query_arg( $args, admin_url( 'admin-post.php?action=dbph_export_consents_csv' ) ),
-							'dbph_export_consents_csv', '_dbph_nonce'
-						) ); ?>" class="page-title-action"><?php esc_html_e( 'Esporta CSV', 'db-privacy-hub' ); ?></a>
+						<a href="
+						<?php
+						echo esc_url(
+							wp_nonce_url(
+								add_query_arg( $args, admin_url( 'admin-post.php?action=dbph_export_consents_csv' ) ),
+								'dbph_export_consents_csv',
+								'_dbph_nonce'
+							)
+						);
+						?>
+						" class="page-title-action"><?php esc_html_e( 'Esporta CSV', 'db-privacy-hub' ); ?></a>
 					<?php endif; ?>
 				</h1>
 				<p class="description">
@@ -1585,14 +1738,16 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				<?php if ( empty( $sources ) ) : ?>
 					<div class="db-ui-alert db-ui-alert-info" style="margin-top:16px">
 						<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
-						<span><?php
+						<span>
+						<?php
 							printf(
 								/* translators: 1: codice filter, 2: codice plugin di esempio */
 								esc_html__( 'Nessuna fonte di consenso registrata. Per popolare questa pagina installa e attiva plugin che dichiarano il filter %1$s (es. %2$s).', 'db-privacy-hub' ),
 								'<code>dbph_consents_register</code>',
 								'<code>DB Cookie Manager 3.2.0+</code>, <code>DB Form Builder 2.11.0+</code>'
 							);
-						?></span>
+						?>
+						</span>
 					</div>
 				<?php else : ?>
 
@@ -1662,14 +1817,15 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 								</tr>
 							</thead>
 							<tbody>
-								<?php foreach ( $rows as $row ) :
-									$ts      = is_array( $row ) ? ( $row['timestamp']      ?? '' ) : ( $row->timestamp      ?? '' );
-									$src_lbl = is_array( $row ) ? ( $row['source_label']   ?? '' ) : ( $row->source_label   ?? '' );
-									$subject = is_array( $row ) ? ( $row['subject']        ?? '' ) : ( $row->subject        ?? '' );
-									$ctype   = is_array( $row ) ? ( $row['consent_type']   ?? '' ) : ( $row->consent_type   ?? '' );
-									$ctext   = is_array( $row ) ? ( $row['consent_text']   ?? '' ) : ( $row->consent_text   ?? '' );
-									$pver    = is_array( $row ) ? ( $row['policy_version'] ?? 0 )  : ( $row->policy_version ?? 0 );
-								?>
+								<?php
+								foreach ( $rows as $row ) :
+									$ts      = is_array( $row ) ? ( $row['timestamp'] ?? '' ) : ( $row->timestamp ?? '' );
+									$src_lbl = is_array( $row ) ? ( $row['source_label'] ?? '' ) : ( $row->source_label ?? '' );
+									$subject = is_array( $row ) ? ( $row['subject'] ?? '' ) : ( $row->subject ?? '' );
+									$ctype   = is_array( $row ) ? ( $row['consent_type'] ?? '' ) : ( $row->consent_type ?? '' );
+									$ctext   = is_array( $row ) ? ( $row['consent_text'] ?? '' ) : ( $row->consent_text ?? '' );
+									$pver    = is_array( $row ) ? ( $row['policy_version'] ?? 0 ) : ( $row->policy_version ?? 0 );
+									?>
 									<tr>
 										<td><code><?php echo esc_html( $ts ); ?></code></td>
 										<td><span class="db-ui-badge db-ui-badge-info"><?php echo esc_html( $src_lbl ); ?></span></td>
@@ -1718,9 +1874,9 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			$args = array(
 				'date_from' => isset( $_GET['date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['date_from'] ) ) : '',
-				'date_to'   => isset( $_GET['date_to'] )   ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) )   : '',
-				'subject'   => isset( $_GET['subject'] )   ? sanitize_text_field( wp_unslash( $_GET['subject'] ) )   : '',
-				'source'    => isset( $_GET['source'] )    ? sanitize_key( $_GET['source'] )                          : '',
+				'date_to'   => isset( $_GET['date_to'] ) ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) ) : '',
+				'subject'   => isset( $_GET['subject'] ) ? sanitize_text_field( wp_unslash( $_GET['subject'] ) ) : '',
+				'source'    => isset( $_GET['source'] ) ? sanitize_key( $_GET['source'] ) : '',
 			);
 
 			// Per il CSV recuperiamo tutto, senza il limite di 200.
@@ -1734,29 +1890,40 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$out = fopen( 'php://output', 'w' );
 			fputs( $out, "\xEF\xBB\xBF" ); // BOM UTF-8 per Excel.
 
-			fputcsv( $out, array(
-				'Timestamp', 'Fonte', 'Identificativo', 'Tipo consenso',
-				'Testo consenso', 'Versione Privacy Policy', 'Extra',
-			) );
+			fputcsv(
+				$out,
+				array(
+					'Timestamp',
+					'Fonte',
+					'Identificativo',
+					'Tipo consenso',
+					'Testo consenso',
+					'Versione Privacy Policy',
+					'Extra',
+				)
+			);
 
 			foreach ( $rows as $row ) {
-				$ts      = is_array( $row ) ? ( $row['timestamp']      ?? '' ) : ( $row->timestamp      ?? '' );
-				$src_lbl = is_array( $row ) ? ( $row['source_label']   ?? '' ) : ( $row->source_label   ?? '' );
-				$subject = is_array( $row ) ? ( $row['subject']        ?? '' ) : ( $row->subject        ?? '' );
-				$ctype   = is_array( $row ) ? ( $row['consent_type']   ?? '' ) : ( $row->consent_type   ?? '' );
-				$ctext   = is_array( $row ) ? ( $row['consent_text']   ?? '' ) : ( $row->consent_text   ?? '' );
-				$pver    = is_array( $row ) ? ( $row['policy_version'] ?? 0 )  : ( $row->policy_version ?? 0 );
-				$extra   = is_array( $row ) ? ( $row['extra']          ?? array() ) : ( $row->extra ?? array() );
+				$ts      = is_array( $row ) ? ( $row['timestamp'] ?? '' ) : ( $row->timestamp ?? '' );
+				$src_lbl = is_array( $row ) ? ( $row['source_label'] ?? '' ) : ( $row->source_label ?? '' );
+				$subject = is_array( $row ) ? ( $row['subject'] ?? '' ) : ( $row->subject ?? '' );
+				$ctype   = is_array( $row ) ? ( $row['consent_type'] ?? '' ) : ( $row->consent_type ?? '' );
+				$ctext   = is_array( $row ) ? ( $row['consent_text'] ?? '' ) : ( $row->consent_text ?? '' );
+				$pver    = is_array( $row ) ? ( $row['policy_version'] ?? 0 ) : ( $row->policy_version ?? 0 );
+				$extra   = is_array( $row ) ? ( $row['extra'] ?? array() ) : ( $row->extra ?? array() );
 
-				fputcsv( $out, array(
-					$ts,
-					$src_lbl,
-					$subject,
-					$ctype,
-					$ctext,
-					$pver > 0 ? 'v#' . $pver : '',
-					is_array( $extra ) ? wp_json_encode( $extra ) : (string) $extra,
-				) );
+				fputcsv(
+					$out,
+					array(
+						$ts,
+						$src_lbl,
+						$subject,
+						$ctype,
+						$ctext,
+						$pver > 0 ? 'v#' . $pver : '',
+						is_array( $extra ) ? wp_json_encode( $extra ) : (string) $extra,
+					)
+				);
 			}
 
 			fclose( $out );

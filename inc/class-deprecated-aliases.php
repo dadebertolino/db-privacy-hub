@@ -62,6 +62,7 @@ if ( ! class_exists( 'DBPH_Deprecated_Aliases' ) ) {
 			}
 
 			self::$is_resolving = true;
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- hook legacy di DB SEO Manager, supportato per retrocompatibilità.
 			$legacy = (array) apply_filters( 'dbseo_processing_register', array() );
 			self::$is_resolving = false;
 

@@ -72,10 +72,10 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			// la richiesta come 'pending' anche quando l'utente non clicca mai il link
 			// (accountability completa). Quando arriva la conferma, lo stato passa a
 			// 'confirmed' tramite l'esistente on_request_confirmed.
-			add_filter( 'user_request_action_email_content', array( __CLASS__, 'on_request_email_sent' ),  10, 2 );
-			add_action( 'user_request_action_confirmed',     array( __CLASS__, 'on_request_confirmed' ),   10, 1 );
-			add_action( 'wp_privacy_personal_data_export_file', array( __CLASS__, 'on_export_done' ),      10, 1 );
-			add_action( 'wp_privacy_personal_data_erased',      array( __CLASS__, 'on_erase_done' ),       10, 1 );
+			add_filter( 'user_request_action_email_content', array( __CLASS__, 'on_request_email_sent' ), 10, 2 );
+			add_action( 'user_request_action_confirmed', array( __CLASS__, 'on_request_confirmed' ), 10, 1 );
+			add_action( 'wp_privacy_personal_data_export_file', array( __CLASS__, 'on_export_done' ), 10, 1 );
+			add_action( 'wp_privacy_personal_data_erased', array( __CLASS__, 'on_erase_done' ), 10, 1 );
 
 			// Cron giornaliero: marca come 'expired' le richieste pending da > 7 giorni.
 			add_action( 'dbph_dsar_cleanup_pending', array( __CLASS__, 'cron_expire_pending' ) );
@@ -163,10 +163,12 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			$table = $wpdb->prefix . self::TABLE_NAME;
 			// Solo le righe ancora a stringa vuota o NULL: evita di sovrascrivere
 			// righe già migrate in precedenti tentativi falliti.
-			$wpdb->query( $wpdb->prepare(
-				"UPDATE {$table} SET source = %s WHERE source = '' OR source IS NULL",
-				self::SOURCE_WP_NATIVE
-			) );
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$table} SET source = %s WHERE source = '' OR source IS NULL",
+					self::SOURCE_WP_NATIVE
+				)
+			);
 		}
 
 		/* =====================================================================
@@ -219,10 +221,12 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
 			// Skip se già loggata (es. WP rinvia l'email su richiesta admin).
-			$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT id FROM {$table} WHERE request_id = %d LIMIT 1",
-				$request_id
-			) );
+			$existing_id = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT id FROM {$table} WHERE request_id = %d LIMIT 1",
+					$request_id
+				)
+			);
 			if ( $existing_id ) {
 				return $email_text;
 			}
@@ -255,8 +259,12 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 * Normalizza il valore action_name di WP_User_Request al nostro vocabolario.
 		 */
 		private static function normalize_type( $action_name ) {
-			if ( $action_name === 'remove_personal_data' ) return self::TYPE_ERASE;
-			if ( $action_name === 'export_personal_data' ) return self::TYPE_EXPORT;
+			if ( $action_name === 'remove_personal_data' ) {
+				return self::TYPE_ERASE;
+			}
+			if ( $action_name === 'export_personal_data' ) {
+				return self::TYPE_EXPORT;
+			}
 			return $action_name;
 		}
 
@@ -276,15 +284,17 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			// il cutoff va calcolato in ora locale per evitare sfasamenti di fuso.
 			$cutoff = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - 7 * DAY_IN_SECONDS );
 
-			$wpdb->query( $wpdb->prepare(
-				"UPDATE {$table}
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$table}
 				 SET status = 'expired'
 				 WHERE status = 'pending'
 				   AND requested_at < %s
 				   AND source = %s",
-				$cutoff,
-				self::SOURCE_WP_NATIVE
-			) );
+					$cutoff,
+					self::SOURCE_WP_NATIVE
+				)
+			);
 		}
 
 		/* =====================================================================
@@ -305,10 +315,12 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 
 			// upsert: se la richiesta è già nel log (creata da on_request_email_sent
 			// o da una conferma precedente), aggiorna il timestamp di conferma.
-			$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT id FROM {$table} WHERE request_id = %d LIMIT 1",
-				(int) $request_id
-			) );
+			$existing_id = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT id FROM {$table} WHERE request_id = %d LIMIT 1",
+					(int) $request_id
+				)
+			);
 
 			$now = current_time( 'mysql' );
 			$requested_at = $request->date_created_gmt
@@ -362,6 +374,7 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
 			// Conta gli exporter registrati al momento (informativo).
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- hook core di WordPress, letto di proposito.
 			$exporters = (array) apply_filters( 'wp_privacy_personal_data_exporters', array() );
 			$wpdb->update(
 				$table,
@@ -401,6 +414,7 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			// (le risposte dei singoli eraser non vengono persistite). Le due
 			// colonne restano al loro valore di default invece di essere
 			// valorizzate con euristiche inattendibili.
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- hook core di WordPress, letto di proposito.
 			$erasers = (array) apply_filters( 'wp_privacy_personal_data_erasers', array() );
 			$wpdb->update(
 				$table,
@@ -424,10 +438,13 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			$table = $wpdb->prefix . self::TABLE_NAME;
 			$limit = max( 1, min( 500, (int) $limit ) );
 			$offset = max( 0, (int) $offset );
-			return (array) $wpdb->get_results( $wpdb->prepare(
-				"SELECT * FROM {$table} ORDER BY id DESC LIMIT %d OFFSET %d",
-				$limit, $offset
-			) );
+			return (array) $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT * FROM {$table} ORDER BY id DESC LIMIT %d OFFSET %d",
+					$limit,
+					$offset
+				)
+			);
 		}
 
 		public static function get_total_count() {
@@ -471,24 +488,30 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			$soon   = gmdate( 'Y-m-d H:i:s', $now_ts + 10 * DAY_IN_SECONDS );
 			$cutoff = gmdate( 'Y-m-d H:i:s', $now_ts - 30 * DAY_IN_SECONDS );
 
-			$out['overdue'] = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table}
+			$out['overdue'] = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table}
 				 WHERE status IN ('pending','confirmed','received','in_progress')
 				   AND requested_at < %s",
-				$cutoff
-			) );
-			$out['due_soon'] = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table}
+					$cutoff
+				)
+			);
+			$out['due_soon'] = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table}
 				 WHERE status IN ('pending','confirmed','received','in_progress')
 				   AND requested_at >= %s
 				   AND DATE_ADD(requested_at, INTERVAL 30 DAY) < %s",
-				$cutoff,
-				$soon
-			) );
-			$out['manual'] = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table} WHERE source = %s",
-				self::SOURCE_MANUAL
-			) );
+					$cutoff,
+					$soon
+				)
+			);
+			$out['manual'] = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table} WHERE source = %s",
+					self::SOURCE_MANUAL
+				)
+			);
 
 			return $out;
 		}
@@ -513,16 +536,19 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 * @return int|WP_Error ID inserito o errore
 		 */
 		public static function insert_manual( $args ) {
-			$args = wp_parse_args( $args, array(
-				'request_type' => '',
-				'email'        => '',
-				'channel'      => 'email',
-				'description'  => '',
-				'status'       => 'received',
-				'requested_at' => current_time( 'mysql' ),
-				'completed_at' => null,
-				'notes'        => '',
-			) );
+			$args = wp_parse_args(
+				$args,
+				array(
+					'request_type' => '',
+					'email'        => '',
+					'channel'      => 'email',
+					'description'  => '',
+					'status'       => 'received',
+					'requested_at' => current_time( 'mysql' ),
+					'completed_at' => null,
+					'notes'        => '',
+				)
+			);
 
 			$valid_types = self::get_valid_types();
 			if ( empty( $args['request_type'] ) || ! in_array( $args['request_type'], $valid_types, true ) ) {
@@ -640,9 +666,14 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 */
 		public static function get_valid_types() {
 			return array(
-				self::TYPE_EXPORT, self::TYPE_ERASE, self::TYPE_RECTIFY,
-				self::TYPE_RESTRICT, self::TYPE_PORTABILITY, self::TYPE_OBJECT,
-				self::TYPE_AUTOMATED, self::TYPE_CONSENT_REV,
+				self::TYPE_EXPORT,
+				self::TYPE_ERASE,
+				self::TYPE_RECTIFY,
+				self::TYPE_RESTRICT,
+				self::TYPE_PORTABILITY,
+				self::TYPE_OBJECT,
+				self::TYPE_AUTOMATED,
+				self::TYPE_CONSENT_REV,
 			);
 		}
 
@@ -651,12 +682,12 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 */
 		public static function get_type_labels() {
 			return array(
-				self::TYPE_EXPORT      => __( 'Accesso (art. 15 GDPR)',        'db-privacy-hub' ),
-				self::TYPE_RECTIFY     => __( 'Rettifica (art. 16 GDPR)',      'db-privacy-hub' ),
-				self::TYPE_ERASE       => __( 'Cancellazione (art. 17 GDPR)',  'db-privacy-hub' ),
-				self::TYPE_RESTRICT    => __( 'Limitazione (art. 18 GDPR)',    'db-privacy-hub' ),
-				self::TYPE_PORTABILITY => __( 'Portabilità (art. 20 GDPR)',    'db-privacy-hub' ),
-				self::TYPE_OBJECT      => __( 'Opposizione (art. 21 GDPR)',    'db-privacy-hub' ),
+				self::TYPE_EXPORT      => __( 'Accesso (art. 15 GDPR)', 'db-privacy-hub' ),
+				self::TYPE_RECTIFY     => __( 'Rettifica (art. 16 GDPR)', 'db-privacy-hub' ),
+				self::TYPE_ERASE       => __( 'Cancellazione (art. 17 GDPR)', 'db-privacy-hub' ),
+				self::TYPE_RESTRICT    => __( 'Limitazione (art. 18 GDPR)', 'db-privacy-hub' ),
+				self::TYPE_PORTABILITY => __( 'Portabilità (art. 20 GDPR)', 'db-privacy-hub' ),
+				self::TYPE_OBJECT      => __( 'Opposizione (art. 21 GDPR)', 'db-privacy-hub' ),
 				self::TYPE_AUTOMATED   => __( 'No decisioni automatizzate (art. 22 GDPR)', 'db-privacy-hub' ),
 				self::TYPE_CONSENT_REV => __( 'Revoca consenso (art. 7.3 GDPR)', 'db-privacy-hub' ),
 			);
@@ -665,23 +696,23 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		public static function get_status_labels() {
 			return array(
 				'pending'     => __( 'In attesa di conferma', 'db-privacy-hub' ),
-				'confirmed'   => __( 'Confermata',            'db-privacy-hub' ),
-				'received'    => __( 'Ricevuta',              'db-privacy-hub' ),
-				'in_progress' => __( 'In lavorazione',        'db-privacy-hub' ),
-				'completed'   => __( 'Completata',            'db-privacy-hub' ),
-				'partial'     => __( 'Parzialmente completata','db-privacy-hub' ),
-				'rejected'    => __( 'Respinta',              'db-privacy-hub' ),
+				'confirmed'   => __( 'Confermata', 'db-privacy-hub' ),
+				'received'    => __( 'Ricevuta', 'db-privacy-hub' ),
+				'in_progress' => __( 'In lavorazione', 'db-privacy-hub' ),
+				'completed'   => __( 'Completata', 'db-privacy-hub' ),
+				'partial'     => __( 'Parzialmente completata', 'db-privacy-hub' ),
+				'rejected'    => __( 'Respinta', 'db-privacy-hub' ),
 				'expired'     => __( 'Scaduta (non confermata)', 'db-privacy-hub' ),
 			);
 		}
 
 		public static function get_channel_labels() {
 			return array(
-				'email' => __( 'Email',                 'db-privacy-hub' ),
-				'pec'   => __( 'PEC',                   'db-privacy-hub' ),
+				'email' => __( 'Email', 'db-privacy-hub' ),
+				'pec'   => __( 'PEC', 'db-privacy-hub' ),
 				'mail'  => __( 'Raccomandata cartacea', 'db-privacy-hub' ),
-				'phone' => __( 'Telefono',              'db-privacy-hub' ),
-				'other' => __( 'Altro',                 'db-privacy-hub' ),
+				'phone' => __( 'Telefono', 'db-privacy-hub' ),
+				'other' => __( 'Altro', 'db-privacy-hub' ),
 			);
 		}
 
@@ -695,11 +726,19 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 */
 		public static function calculate_deadline( $row ) {
 			if ( ! $row || empty( $row->requested_at ) ) {
-				return array( 'class' => '', 'label' => '', 'days' => 0 );
+				return array(
+					'class' => '',
+					'label' => '',
+					'days' => 0,
+				);
 			}
 			$open_states = array( 'pending', 'confirmed', 'received', 'in_progress' );
 			if ( ! in_array( $row->status, $open_states, true ) ) {
-				return array( 'class' => '', 'label' => '', 'days' => 0 );
+				return array(
+					'class' => '',
+					'label' => '',
+					'days' => 0,
+				);
 			}
 
 			$deadline = strtotime( $row->requested_at . ' +30 days' );

@@ -71,15 +71,22 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 			// Sanitize/validate: ogni fonte deve avere almeno label + query.
 			$valid = array();
 			foreach ( $sources as $key => $src ) {
-				if ( ! is_array( $src ) ) continue;
-				if ( empty( $src['label'] ) || empty( $src['query'] ) ) continue;
-				$valid[ sanitize_key( $key ) ] = wp_parse_args( $src, array(
-					'label'  => '',
-					'icon'   => '',
-					'count'  => null,
-					'query'  => null,
-					'export' => null,
-				) );
+				if ( ! is_array( $src ) ) {
+					continue;
+				}
+				if ( empty( $src['label'] ) || empty( $src['query'] ) ) {
+					continue;
+				}
+				$valid[ sanitize_key( $key ) ] = wp_parse_args(
+					$src,
+					array(
+						'label'  => '',
+						'icon'   => '',
+						'count'  => null,
+						'query'  => null,
+						'export' => null,
+					)
+				);
 			}
 			self::$sources_cache = $valid;
 			return $valid;
@@ -94,9 +101,13 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 		 */
 		public static function count_for( $source_key, $args = array() ) {
 			$sources = self::get_sources();
-			if ( ! isset( $sources[ $source_key ] ) ) return 0;
+			if ( ! isset( $sources[ $source_key ] ) ) {
+				return 0;
+			}
 			$cb = $sources[ $source_key ]['count'];
-			if ( ! is_callable( $cb ) ) return 0;
+			if ( ! is_callable( $cb ) ) {
+				return 0;
+			}
 			return (int) call_user_func( $cb, $args );
 		}
 
@@ -109,9 +120,13 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 		 */
 		public static function query_for( $source_key, $args = array() ) {
 			$sources = self::get_sources();
-			if ( ! isset( $sources[ $source_key ] ) ) return array();
+			if ( ! isset( $sources[ $source_key ] ) ) {
+				return array();
+			}
 			$cb = $sources[ $source_key ]['query'];
-			if ( ! is_callable( $cb ) ) return array();
+			if ( ! is_callable( $cb ) ) {
+				return array();
+			}
 
 			$rows = (array) call_user_func( $cb, $args );
 
@@ -141,7 +156,9 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 		 */
 		public static function query_all( $args = array(), $limit = 200 ) {
 			$sources = self::get_sources();
-			if ( empty( $sources ) ) return array();
+			if ( empty( $sources ) ) {
+				return array();
+			}
 
 			// Propaga il limite alle callback: dato che il risultato finale è
 			// comunque troncato a $limit, nessuna fonte ha bisogno di restituire
@@ -162,11 +179,14 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 			}
 
 			// Sort cronologico decrescente sul timestamp.
-			usort( $all, function ( $a, $b ) {
-				$ta = is_array( $a ) ? ( $a['timestamp'] ?? '' ) : ( $a->timestamp ?? '' );
-				$tb = is_array( $b ) ? ( $b['timestamp'] ?? '' ) : ( $b->timestamp ?? '' );
-				return strcmp( $tb, $ta );
-			} );
+			usort(
+				$all,
+				function ( $a, $b ) {
+					$ta = is_array( $a ) ? ( $a['timestamp'] ?? '' ) : ( $a->timestamp ?? '' );
+					$tb = is_array( $b ) ? ( $b['timestamp'] ?? '' ) : ( $b->timestamp ?? '' );
+					return strcmp( $tb, $ta );
+				}
+			);
 
 			return array_slice( $all, 0, $limit );
 		}

@@ -306,6 +306,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			return $html;
 		}
 
+		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- firma uniforme con le altre sezioni del generatore.
 		private static function section_finalita( $context ) {
 			$html  = '<h3>' . esc_html__( '2. Finalità del trattamento e basi giuridiche', 'db-privacy-hub' ) . '</h3>';
 			$html .= '<p>' . esc_html__( 'I dati personali raccolti tramite il sito vengono trattati per le finalità descritte di seguito. Per ciascuna finalità è indicata la base giuridica corrispondente, tra quelle previste dall\'art. 6 GDPR (consenso, esecuzione di un contratto, obbligo di legge, legittimo interesse).', 'db-privacy-hub' ) . '</p>';
@@ -437,9 +438,14 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 					$declared_names[] = strtolower( trim( $r['nome'] ) );
 				}
 			}
-			$dest = array_values( array_filter( $dest, function ( $d ) use ( $declared_names ) {
-				return empty( $d['name'] ) || ! in_array( strtolower( trim( $d['name'] ) ), $declared_names, true );
-			} ) );
+			$dest = array_values(
+				array_filter(
+					$dest,
+					function ( $d ) use ( $declared_names ) {
+						return empty( $d['name'] ) || ! in_array( strtolower( trim( $d['name'] ) ), $declared_names, true );
+					}
+				)
+			);
 
 			$html .= '<p>' . esc_html__( 'Per le finalità sopra indicate, i dati personali possono essere comunicati ai soggetti elencati di seguito. I dati non vengono diffusi.', 'db-privacy-hub' ) . '</p>';
 
@@ -457,11 +463,16 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 						$details[] = esc_html( $r['ruolo'] );
 					}
 					if ( ! empty( $r['paese'] ) ) {
-						$details[] = ! empty( $r['extra_ue'] )
-							? sprintf( esc_html__( 'paese: %s (extra-UE)', 'db-privacy-hub' ), esc_html( $r['paese'] ) )
-							: sprintf( esc_html__( 'paese: %s', 'db-privacy-hub' ), esc_html( $r['paese'] ) );
+						if ( ! empty( $r['extra_ue'] ) ) {
+							/* translators: %s: paese del responsabile */
+							$details[] = sprintf( esc_html__( 'paese: %s (extra-UE)', 'db-privacy-hub' ), esc_html( $r['paese'] ) );
+						} else {
+							/* translators: %s: paese del responsabile */
+							$details[] = sprintf( esc_html__( 'paese: %s', 'db-privacy-hub' ), esc_html( $r['paese'] ) );
+						}
 					}
 					if ( ! empty( $r['garanzie'] ) ) {
+						/* translators: %s: garanzie per il trasferimento */
 						$details[] = sprintf( esc_html__( 'garanzie: %s', 'db-privacy-hub' ), esc_html( $r['garanzie'] ) );
 					}
 					if ( $details ) {

@@ -102,7 +102,7 @@ if ( ! class_exists( 'DBPH_Register' ) ) {
 				if ( ! isset( $counts[ $prefix ] ) ) {
 					$counts[ $prefix ] = 0;
 				}
-				$counts[ $prefix ]++;
+				++$counts[ $prefix ];
 			}
 			return $counts;
 		}

@@ -143,10 +143,12 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
 			$limit = max( 1, min( 100, (int) $limit ) );
-			return (array) $wpdb->get_results( $wpdb->prepare(
-				"SELECT id, created_at, content_hash, bytes, note FROM {$table} ORDER BY id DESC LIMIT %d",
-				$limit
-			) );
+			return (array) $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT id, created_at, content_hash, bytes, note FROM {$table} ORDER BY id DESC LIMIT %d",
+					$limit
+				)
+			);
 		}
 
 		/**

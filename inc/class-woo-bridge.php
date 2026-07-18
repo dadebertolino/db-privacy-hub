@@ -59,8 +59,8 @@ if ( ! class_exists( 'DBPH_Woo_Bridge' ) ) {
 			// Priority 20: dopo le dichiarazioni dei plugin DB (default 10),
 			// prima del merge legacy (999).
 			add_filter( 'dbph_processing_register', array( __CLASS__, 'register_processings' ), 20 );
-			add_filter( 'dbph_policy_destinatari',  array( __CLASS__, 'register_destinatari' ), 20 );
-			add_filter( 'dbph_policy_sections',     array( __CLASS__, 'extend_rights_section' ), 20, 2 );
+			add_filter( 'dbph_policy_destinatari', array( __CLASS__, 'register_destinatari' ), 20 );
+			add_filter( 'dbph_policy_sections', array( __CLASS__, 'extend_rights_section' ), 20, 2 );
 		}
 
 		/* =====================================================================
@@ -273,6 +273,7 @@ if ( ! class_exists( 'DBPH_Woo_Bridge' ) ) {
 		 * @param array $context
 		 * @return array
 		 */
+		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- la firma a 2 argomenti è il contratto del filter dbph_policy_sections.
 		public static function extend_rights_section( $sections, $context ) {
 			if ( ! is_array( $sections ) || empty( $sections['diritti'] ) ) {
 				return $sections;

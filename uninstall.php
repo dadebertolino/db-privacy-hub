@@ -33,19 +33,19 @@ global $wpdb;
 /* -------------------------------------------------------------------------
  * Tabelle custom (1.1.0+)
  * ---------------------------------------------------------------------- */
-$tables = array(
+$dbph_tables = array(
 	$wpdb->prefix . 'dbph_dsar_log',
 	$wpdb->prefix . 'dbph_policy_archive',
 );
-foreach ( $tables as $tbl ) {
+foreach ( $dbph_tables as $dbph_tbl ) {
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	$wpdb->query( "DROP TABLE IF EXISTS `{$tbl}`" );
+	$wpdb->query( "DROP TABLE IF EXISTS `{$dbph_tbl}`" );
 }
 
 /* -------------------------------------------------------------------------
  * Opzioni
  * ---------------------------------------------------------------------- */
-$options = array(
+$dbph_options = array(
 	'dbph_version',
 	'dbph_titolare_nome',
 	'dbph_titolare_piva',
@@ -70,15 +70,15 @@ $options = array(
 	'dbph_social_pages_mention',
 );
 
-foreach ( $options as $opt ) {
-	delete_option( $opt );
+foreach ( $dbph_options as $dbph_opt ) {
+	delete_option( $dbph_opt );
 }
 
 // 1.6.0: transient cache scansione embed.
 delete_transient( 'dbph_embed_scan' );
 
 // 1.2.0: pulisci anche eventuali cron schedulati.
-$ts = wp_next_scheduled( 'dbph_dsar_cleanup_pending' );
-if ( $ts ) {
-	wp_unschedule_event( $ts, 'dbph_dsar_cleanup_pending' );
+$dbph_ts = wp_next_scheduled( 'dbph_dsar_cleanup_pending' );
+if ( $dbph_ts ) {
+	wp_unschedule_event( $dbph_ts, 'dbph_dsar_cleanup_pending' );
 }

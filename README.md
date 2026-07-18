@@ -125,6 +125,15 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 #### 1.6.0 — Bridge social e contenuti incorporati _(2026)_
 
+**Tooling e CI**
+
+- **GitHub Actions CI** — lint di sintassi su PHP 7.4 e 8.3 (matrice), PHPCS con WordPress Coding Standards (`phpcs.xml.dist`) e verifica PHPCompatibilityWP per il requisito PHP 7.4+
+- **Workflow di release** — al push di un tag `v*`: verifica che il tag corrisponda alla versione nel plugin header e nella costante `DBPH_VERSION`, builda lo ZIP con radice `db-privacy-hub/` senza file di sviluppo e lo allega alla GitHub Release — l'asset è quello che l'auto-updater scarica (senza asset l'updater ripiegherebbe sullo zipball, che ha la cartella radice sbagliata)
+- **Codebase allineata a WPCS** — ~4.700 rilievi risolti tra auto-correzione (phpcbf) e interventi manuali: variabili globali prefissate in `uninstall.php`, short ternary espliciti, commenti translators mancanti, annotazioni `phpcs:ignore` motivate per i falsi positivi (sanitizzazione a valle, hook core WP); le esclusioni per scelte progettuali deliberate (tabelle custom, ora locale DSAR, export CSV in streaming) sono documentate nel ruleset
+- `composer.json` con script `lint`, `phpcs`, `phpcbf` per l'uso locale
+
+**Funzionalità**
+
 - **Nuovo modulo `DBPH_Embed_Bridge`** — rileva le piattaforme terze i cui contenuti sono incorporati nel sito (YouTube, Vimeo, Facebook, Instagram, TikTok, X, LinkedIn, Spotify, Google Maps) tramite blocchi Gutenberg embed, iframe nei contenuti e plugin noti; i semplici link ai profili sono volutamente esclusi (un link non trasferisce dati)
 - **Abilitazione manuale** — checkbox nella pagina "Genera Privacy Policy" per dichiarare a mano le piattaforme che la scansione non può vedere (embed del tema, share button, page builder); le piattaforme rilevate automaticamente sono contrassegnate e dichiarate comunque
 - **Voci di registro automatiche** — "Contenuti incorporati da piattaforme terze" (base: consenso art. 6.1.a, con rinvio al banner cookie) e "Remarketing e misurazione pubblicitaria" se è attivo un plugin pixel noto (PixelYourSite, Meta pixel, Facebook for WooCommerce, TikTok)

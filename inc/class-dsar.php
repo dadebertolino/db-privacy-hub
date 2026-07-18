@@ -44,7 +44,7 @@ if ( ! class_exists( 'DBPH_DSAR' ) ) {
 
 		public static function init() {
 			add_filter( 'wp_privacy_personal_data_exporters', array( __CLASS__, 'register_exporters' ), 20 );
-			add_filter( 'wp_privacy_personal_data_erasers',   array( __CLASS__, 'register_erasers' ),   20 );
+			add_filter( 'wp_privacy_personal_data_erasers', array( __CLASS__, 'register_erasers' ), 20 );
 		}
 
 		/**

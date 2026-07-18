@@ -65,11 +65,11 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 			}
 
 			add_filter( 'dbph_processing_register', array( __CLASS__, 'register_processings' ), 20 );
-			add_filter( 'dbph_policy_destinatari',  array( __CLASS__, 'register_destinatari' ), 20 );
-			add_filter( 'dbph_policy_sections',     array( __CLASS__, 'extend_sections' ), 25, 2 );
+			add_filter( 'dbph_policy_destinatari', array( __CLASS__, 'register_destinatari' ), 20 );
+			add_filter( 'dbph_policy_sections', array( __CLASS__, 'extend_sections' ), 25, 2 );
 
 			// Invalida la cache di scansione quando un contenuto cambia.
-			add_action( 'save_post',    array( __CLASS__, 'flush_scan_cache' ) );
+			add_action( 'save_post', array( __CLASS__, 'flush_scan_cache' ) );
 			add_action( 'deleted_post', array( __CLASS__, 'flush_scan_cache' ) );
 		}
 
@@ -257,14 +257,16 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 				foreach ( $needles as $needle ) {
 					$like = '%' . $wpdb->esc_like( $needle ) . '%';
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $types_in è esc_sql'd
-					$hit = $wpdb->get_var( $wpdb->prepare(
-						"SELECT ID FROM {$wpdb->posts}
+					$hit = $wpdb->get_var(
+						$wpdb->prepare(
+							"SELECT ID FROM {$wpdb->posts}
 						 WHERE post_status = 'publish'
 						   AND post_type IN ({$types_in})
 						   AND post_content LIKE %s
 						 LIMIT 1",
-						$like
-					) );
+							$like
+						)
+					);
 					if ( $hit ) {
 						$found[] = $key;
 						break;
@@ -380,6 +382,7 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 		 * 4. Contitolarità pagine social (CGUE C-210/16)
 		 * ================================================================== */
 
+		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- la firma a 2 argomenti è il contratto del filter dbph_policy_sections.
 		public static function extend_sections( $sections, $context ) {
 			if ( ! is_array( $sections ) || empty( $sections['destinatari'] ) ) {
 				return $sections;

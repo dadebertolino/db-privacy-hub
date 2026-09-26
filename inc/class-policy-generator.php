@@ -81,6 +81,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 				'site_url'      => home_url( '/' ),
 				'admin_email'   => get_option( 'admin_email' ),
 				'date'          => date_i18n( get_option( 'date_format' ) ),
+				'has_db_dsar'   => self::has_db_dsar(),
 				'titolare'      => self::get_titolare(),
 				'register'      => DBPH_Register::collect(),
 				'destinatari'   => self::detect_destinatari(),
@@ -195,6 +196,11 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 		}
 
 		private static function is_recaptcha_configured() {
+			// 1.7.0: l'option sopravvive alla disattivazione del Form Builder:
+			// dichiariamo reCAPTCHA solo se il plugin è effettivamente attivo.
+			if ( ! post_type_exists( 'dbfb_form' ) ) {
+				return false;
+			}
 			// Form Builder espone le sue impostazioni come option `dbfb_global_settings`.
 			$dbfb = get_option( 'dbfb_global_settings', array() );
 			if ( is_array( $dbfb ) ) {
@@ -219,7 +225,14 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 					)
 				);
 				foreach ( $forms as $form_id ) {
-					$webhook_url = get_post_meta( $form_id, '_dbfb_webhook_url', true );
+					// 1.7.0: il Form Builder salva il webhook in `_dbfb_settings`
+					// (webhook_url + enable_webhook); il meta `_dbfb_webhook_url`
+					// letto fino alla 1.6.0 non è mai esistito.
+					$settings = get_post_meta( $form_id, '_dbfb_settings', true );
+					if ( ! is_array( $settings ) || empty( $settings['enable_webhook'] ) ) {
+						continue;
+					}
+					$webhook_url = isset( $settings['webhook_url'] ) ? $settings['webhook_url'] : '';
 					if ( ! is_string( $webhook_url ) || $webhook_url === '' ) {
 						continue;
 					}
@@ -240,7 +253,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 		private static function section_header( $context ) {
 			$site = esc_html( $context['site_name'] );
 			$url  = esc_url( $context['site_url'] );
-			$date = esc_html( $context['date'] );
+			$date = '<span class="dbph-date">' . esc_html( $context['date'] ) . '</span>';
 
 			$html  = '<h2>' . esc_html__( 'Informativa sul trattamento dei dati personali', 'db-privacy-hub' ) . '</h2>';
 			$html .= '<p><strong>' . esc_html__( 'Ultimo aggiornamento:', 'db-privacy-hub' ) . '</strong> ' . $date . '</p>';
@@ -251,20 +264,26 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 				$url
 			) . '</p>';
 
-			// Indice clickabile.
+			// Indice clickabile (1.7.0: con ancore verso le sezioni).
+			$index = array(
+				'titolare'      => __( 'Titolare del trattamento', 'db-privacy-hub' ),
+				'finalita'      => __( 'Finalità del trattamento e basi giuridiche', 'db-privacy-hub' ),
+				'trattamenti'   => __( 'Trattamenti specifici', 'db-privacy-hub' ),
+				'cookie'        => __( 'Cookie e tecnologie simili', 'db-privacy-hub' ),
+				'destinatari'   => __( 'Destinatari dei dati', 'db-privacy-hub' ),
+				'diritti'       => __( 'Diritti dell\'interessato', 'db-privacy-hub' ),
+				'conservazione' => __( 'Conservazione dei dati', 'db-privacy-hub' ),
+				'modifiche'     => __( 'Modifiche all\'informativa', 'db-privacy-hub' ),
+				'reclamo'       => __( 'Reclamo all\'autorità di controllo', 'db-privacy-hub' ),
+			);
+			if ( ! $context['has_cookie'] ) {
+				unset( $index['cookie'] );
+			}
 			$html .= '<h3>' . esc_html__( 'Indice', 'db-privacy-hub' ) . '</h3>';
 			$html .= '<ol>';
-			$html .= '<li>' . esc_html__( 'Titolare del trattamento', 'db-privacy-hub' ) . '</li>';
-			$html .= '<li>' . esc_html__( 'Finalità del trattamento e basi giuridiche', 'db-privacy-hub' ) . '</li>';
-			$html .= '<li>' . esc_html__( 'Trattamenti specifici', 'db-privacy-hub' ) . '</li>';
-			if ( $context['has_cookie'] ) {
-				$html .= '<li>' . esc_html__( 'Cookie e tecnologie simili', 'db-privacy-hub' ) . '</li>';
+			foreach ( $index as $anchor => $label ) {
+				$html .= '<li><a href="#' . esc_attr( self::anchor( $anchor ) ) . '">' . esc_html( $label ) . '</a></li>';
 			}
-			$html .= '<li>' . esc_html__( 'Destinatari dei dati', 'db-privacy-hub' ) . '</li>';
-			$html .= '<li>' . esc_html__( 'Diritti dell\'interessato', 'db-privacy-hub' ) . '</li>';
-			$html .= '<li>' . esc_html__( 'Conservazione dei dati', 'db-privacy-hub' ) . '</li>';
-			$html .= '<li>' . esc_html__( 'Modifiche all\'informativa', 'db-privacy-hub' ) . '</li>';
-			$html .= '<li>' . esc_html__( 'Reclamo all\'autorità di controllo', 'db-privacy-hub' ) . '</li>';
 			$html .= '</ol>';
 
 			return $html;
@@ -273,7 +292,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 		private static function section_titolare( $context ) {
 			$t = $context['titolare'];
 
-			$html = '<h3>' . esc_html__( '1. Titolare del trattamento', 'db-privacy-hub' ) . '</h3>';
+			$html = '<h3 id="' . esc_attr( self::anchor( 'titolare' ) ) . '">' . esc_html__( '1. Titolare del trattamento', 'db-privacy-hub' ) . '</h3>';
 
 			if ( $t['nome'] === '' ) {
 				$html .= '<p style="background:#fff3cd;border:1px solid #ffeaa7;padding:12px"><strong>' . esc_html__( 'Attenzione:', 'db-privacy-hub' ) . '</strong> ' . esc_html__( 'i dati del titolare non sono ancora stati configurati. Compila la sezione "Dati del titolare" nelle impostazioni di DB Privacy Hub prima di pubblicare questa informativa.', 'db-privacy-hub' ) . '</p>';
@@ -308,7 +327,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- firma uniforme con le altre sezioni del generatore.
 		private static function section_finalita( $context ) {
-			$html  = '<h3>' . esc_html__( '2. Finalità del trattamento e basi giuridiche', 'db-privacy-hub' ) . '</h3>';
+			$html  = '<h3 id="' . esc_attr( self::anchor( 'finalita' ) ) . '">' . esc_html__( '2. Finalità del trattamento e basi giuridiche', 'db-privacy-hub' ) . '</h3>';
 			$html .= '<p>' . esc_html__( 'I dati personali raccolti tramite il sito vengono trattati per le finalità descritte di seguito. Per ciascuna finalità è indicata la base giuridica corrispondente, tra quelle previste dall\'art. 6 GDPR (consenso, esecuzione di un contratto, obbligo di legge, legittimo interesse).', 'db-privacy-hub' ) . '</p>';
 			$html .= '<p>' . esc_html__( 'L\'elenco completo dei trattamenti specifici, comprensivo dei dati raccolti, della base giuridica puntuale e della durata di conservazione, è riportato nella sezione successiva.', 'db-privacy-hub' ) . '</p>';
 
@@ -318,7 +337,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 		private static function section_trattamenti( $context ) {
 			$register = $context['register'];
 
-			$html = '<h3>' . esc_html__( '3. Trattamenti specifici', 'db-privacy-hub' ) . '</h3>';
+			$html = '<h3 id="' . esc_attr( self::anchor( 'trattamenti' ) ) . '">' . esc_html__( '3. Trattamenti specifici', 'db-privacy-hub' ) . '</h3>';
 
 			if ( empty( $register ) ) {
 				$html .= '<p><em>' . esc_html__( 'Nessun trattamento dichiarato. Verifica che i plugin DB siano attivi e che dichiarino correttamente i propri trattamenti via il filter dbph_processing_register.', 'db-privacy-hub' ) . '</em></p>';
@@ -371,7 +390,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			if ( ! method_exists( 'DBCM_Policy_Generator', 'get_sections' ) ) {
 				// Cookie Manager troppo vecchio (< 3.1.0) — invita all'aggiornamento
 				// con un placeholder neutro che NON rompe l'output.
-				return '<h3>' . esc_html__( '4. Cookie e tecnologie simili', 'db-privacy-hub' ) . '</h3>'
+				return '<h3 id="' . esc_attr( self::anchor( 'cookie' ) ) . '">' . esc_html__( '4. Cookie e tecnologie simili', 'db-privacy-hub' ) . '</h3>'
 					. '<p><em>' . esc_html__( 'Per la sezione cookie completa è richiesto DB Cookie Manager 3.1.0 o superiore.', 'db-privacy-hub' ) . '</em></p>';
 			}
 
@@ -384,7 +403,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			// updates e footer — duplicano contenuti dell'Hub).
 			$keep = array( 'what_are_cookies', 'cookies_used', 'external_services', 'browser_management' );
 
-			$html = '<h3>' . esc_html__( '4. Cookie e tecnologie simili', 'db-privacy-hub' ) . '</h3>';
+			$html = '<h3 id="' . esc_attr( self::anchor( 'cookie' ) ) . '">' . esc_html__( '4. Cookie e tecnologie simili', 'db-privacy-hub' ) . '</h3>';
 			$html .= '<p>' . esc_html__( 'L\'elenco completo dei cookie utilizzati sul sito, comprensivo di durata, fornitore e finalità, è riportato di seguito. Le preferenze possono essere modificate in qualsiasi momento attraverso il banner cookie.', 'db-privacy-hub' ) . '</p>';
 
 			// Demote dei sotto-titoli h3 → h4 / h4 → h5 per coerenza gerarchica.
@@ -411,7 +430,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 		private static function section_destinatari( $context ) {
 			$num = $context['has_cookie'] ? 5 : 4;
-			$html = '<h3>' . sprintf(
+			$html = '<h3 id="' . esc_attr( self::anchor( 'destinatari' ) ) . '">' . sprintf(
 				/* translators: %d: numero della sezione */
 				esc_html__( '%d. Destinatari dei dati', 'db-privacy-hub' ),
 				$num
@@ -443,6 +462,27 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 					$dest,
 					function ( $d ) use ( $declared_names ) {
 						return empty( $d['name'] ) || ! in_array( strtolower( trim( $d['name'] ) ), $declared_names, true );
+					}
+				)
+			);
+
+			// 1.7.0: dedup dei destinatari rilevati per nome. Più gateway dello
+			// stesso fornitore (stripe + stripe_sepa, ppcp-gateway + ppcp-card)
+			// o più fonti di detection producevano voci ripetute.
+			$seen = array();
+			$dest = array_values(
+				array_filter(
+					$dest,
+					function ( $d ) use ( &$seen ) {
+						if ( ! is_array( $d ) || empty( $d['name'] ) ) {
+							return false;
+						}
+						$k = strtolower( trim( (string) $d['name'] ) );
+						if ( isset( $seen[ $k ] ) ) {
+							return false;
+						}
+						$seen[ $k ] = true;
+						return true;
 					}
 				)
 			);
@@ -528,7 +568,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 		private static function section_diritti( $context ) {
 			$num = $context['has_cookie'] ? 6 : 5;
-			$html = '<h3>' . sprintf(
+			$html = '<h3 id="' . esc_attr( self::anchor( 'diritti' ) ) . '">' . sprintf(
 				/* translators: %d: numero della sezione */
 				esc_html__( '%d. Diritti dell\'interessato', 'db-privacy-hub' ),
 				$num
@@ -546,9 +586,12 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			$html .= '<li><strong>' . esc_html__( 'Revoca del consenso', 'db-privacy-hub' ) . '</strong> — ' . esc_html__( 'revocare in ogni momento il consenso prestato, senza che ciò pregiudichi la liceità dei trattamenti svolti prima della revoca.', 'db-privacy-hub' ) . '</li>';
 			$html .= '</ul>';
 
-			// Menzione DSAR automatico Form Builder 2.5.0+.
-			if ( self::has_dbfb_dsar() ) {
-				$html .= '<p><strong>' . esc_html__( 'Procedura semplificata di esercizio dei diritti.', 'db-privacy-hub' ) . '</strong> ' . esc_html__( 'Il sito mette a disposizione una procedura automatica (DSAR — Data Subject Access Request) per richiedere la copia dei propri dati o la cancellazione: l\'utente può effettuare la richiesta direttamente attraverso un modulo dedicato, riceverà una email di conferma e i dati richiesti gli verranno forniti entro i termini di legge.', 'db-privacy-hub' ) . '</p>';
+			// Menzione della procedura DSAR (1.7.0: generica per tutti i plugin
+			// DB che dichiarano exporter/eraser, e testo allineato al flusso
+			// reale — WordPress non offre un modulo pubblico: la richiesta
+			// arriva al titolare, che la avvia dagli strumenti privacy).
+			if ( ! empty( $context['has_db_dsar'] ) ) {
+				$html .= '<p><strong>' . esc_html__( 'Procedura di esercizio dei diritti di accesso e cancellazione.', 'db-privacy-hub' ) . '</strong> ' . esc_html__( 'Il sito dispone di una procedura strutturata per l\'esportazione e la cancellazione dei dati personali: ricevuta la richiesta, il titolare invia all\'indirizzo email indicato un messaggio di conferma; dopo la conferma, i dati vengono raccolti da tutte le funzionalità del sito che li trattano e forniti in formato elettronico strutturato (o cancellati, salvo i dati soggetti a obblighi di conservazione) entro i termini di legge.', 'db-privacy-hub' ) . '</p>';
 			}
 
 			// Contatto per esercitare i diritti.
@@ -605,20 +648,20 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 			$html .= '</ol>';
 
-			$html .= '<h4>' . esc_html__( 'Diritto di reclamo all\'autorità di controllo', 'db-privacy-hub' ) . '</h4>';
+			// 1.7.0: il reclamo al Garante è trattato una sola volta, nella
+			// sezione dedicata (prima compariva due volte con due URL diversi).
 			$html .= '<p>' . sprintf(
-				/* translators: %s: link al sito del Garante */
-				esc_html__( 'Se ritieni che il trattamento dei tuoi dati personali violi le disposizioni del GDPR o della normativa italiana in materia di protezione dei dati personali, hai il diritto di proporre reclamo al Garante per la protezione dei dati personali (art. 77 GDPR), con sede in Piazza Venezia 11, 00187 Roma. Il modulo di reclamo è disponibile sul sito ufficiale del Garante: %s.', 'db-privacy-hub' ),
-				'<a href="https://www.gpdp.it" target="_blank" rel="noopener noreferrer">www.gpdp.it</a>'
+				/* translators: %s: link alla sezione reclamo */
+				esc_html__( 'Resta fermo il diritto di proporre reclamo all\'autorità di controllo, descritto nella %s.', 'db-privacy-hub' ),
+				'<a href="#' . esc_attr( self::anchor( 'reclamo' ) ) . '">' . esc_html__( 'sezione dedicata', 'db-privacy-hub' ) . '</a>'
 			) . '</p>';
-			$html .= '<p>' . esc_html__( 'In alternativa al reclamo amministrativo, puoi rivolgerti all\'autorità giudiziaria ordinaria.', 'db-privacy-hub' ) . '</p>';
 
 			return $html;
 		}
 
 		private static function section_conservazione( $context ) {
 			$num = $context['has_cookie'] ? 7 : 6;
-			$html = '<h3>' . sprintf(
+			$html = '<h3 id="' . esc_attr( self::anchor( 'conservazione' ) ) . '">' . sprintf(
 				/* translators: %d: numero della sezione */
 				esc_html__( '%d. Conservazione dei dati', 'db-privacy-hub' ),
 				$num
@@ -630,7 +673,7 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 		private static function section_modifiche( $context ) {
 			$num = $context['has_cookie'] ? 8 : 7;
-			$html = '<h3>' . sprintf(
+			$html = '<h3 id="' . esc_attr( self::anchor( 'modifiche' ) ) . '">' . sprintf(
 				/* translators: %d: numero della sezione */
 				esc_html__( '%d. Modifiche all\'informativa', 'db-privacy-hub' ),
 				$num
@@ -642,18 +685,18 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 		private static function section_reclamo( $context ) {
 			$num = $context['has_cookie'] ? 9 : 8;
-			$html = '<h3>' . sprintf(
+			$html = '<h3 id="' . esc_attr( self::anchor( 'reclamo' ) ) . '">' . sprintf(
 				/* translators: %d: numero della sezione */
 				esc_html__( '%d. Reclamo all\'autorità di controllo', 'db-privacy-hub' ),
 				$num
 			) . '</h3>';
-			$html .= '<p>' . esc_html__( 'L\'interessato che ritenga che il trattamento dei propri dati personali avvenga in violazione di quanto previsto dal GDPR ha il diritto di proporre reclamo al Garante per la protezione dei dati personali — Piazza Venezia 11, 00187 Roma — sito web:', 'db-privacy-hub' ) . ' <a href="https://www.garanteprivacy.it" target="_blank" rel="noopener">www.garanteprivacy.it</a> — ' . esc_html__( 'oppure adire le opportune sedi giudiziarie.', 'db-privacy-hub' ) . '</p>';
+			$html .= '<p>' . esc_html__( 'L\'interessato che ritenga che il trattamento dei propri dati personali avvenga in violazione di quanto previsto dal GDPR ha il diritto di proporre reclamo al Garante per la protezione dei dati personali (art. 77 GDPR) — Piazza Venezia 11, 00187 Roma — sito web:', 'db-privacy-hub' ) . ' <a href="https://www.garanteprivacy.it" target="_blank" rel="noopener noreferrer">www.garanteprivacy.it</a> — ' . esc_html__( 'oppure adire le opportune sedi giudiziarie (art. 79 GDPR).', 'db-privacy-hub' ) . '</p>';
 
 			return $html;
 		}
 
 		private static function section_footer( $context ) {
-			$date = esc_html( $context['date'] );
+			$date = '<span class="dbph-date">' . esc_html( $context['date'] ) . '</span>';
 			$html  = '<hr>';
 			$html .= '<p style="font-size:0.85em;color:#666"><em>';
 			$html .= sprintf(
@@ -670,17 +713,44 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 		 * Helper
 		 * ================================================================== */
 
-		private static function has_dbfb_dsar() {
-			// Form Builder 2.5.0+ pubblica la presenza del DSAR via option/constante;
-			// per ora rileviamo via flag esposto dal Form Builder.
-			if ( defined( 'DBFB_DSAR_AVAILABLE' ) && DBFB_DSAR_AVAILABLE ) {
+		/**
+		 * Verifica se almeno un plugin DB attivo implementa il DSAR
+		 * (exporter/eraser dichiarati sull'Hub o marker XXX_DSAR_AVAILABLE).
+		 *
+		 * 1.7.0: prima era riconosciuto solo il Form Builder (costante
+		 * DBFB_DSAR_AVAILABLE + un'option `dbfb_version` mai scritta).
+		 *
+		 * @return bool
+		 */
+		private static function has_db_dsar() {
+			$db_exporters = (array) apply_filters( 'dbph_user_data_exporters', array() );
+			if ( ! empty( $db_exporters ) ) {
 				return true;
 			}
-			$ver = get_option( 'dbfb_version', '' );
-			if ( $ver && version_compare( $ver, '2.5.0', '>=' ) ) {
-				return true;
+			$markers = array( 'DBFB_DSAR_AVAILABLE', 'DBEM_DSAR_AVAILABLE', 'DBR54_DSAR_AVAILABLE', 'DBSM_DSAR_AVAILABLE', 'DBSEO_DSAR_AVAILABLE' );
+			foreach ( $markers as $const ) {
+				if ( defined( $const ) && constant( $const ) ) {
+					return true;
+				}
 			}
-			return false;
+			/**
+			 * Permette a plugin terzi di dichiarare la disponibilità del DSAR.
+			 *
+			 * @since 1.7.0
+			 * @param bool $available
+			 */
+			return (bool) apply_filters( 'dbph_dsar_available', false );
+		}
+
+		/**
+		 * ID HTML stabile per le ancore dell'indice.
+		 *
+		 * @since 1.7.0
+		 * @param string $key
+		 * @return string
+		 */
+		private static function anchor( $key ) {
+			return 'dbph-' . sanitize_key( $key );
 		}
 
 		private static function get_contact_email_for_rights( $context ) {

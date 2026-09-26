@@ -15,9 +15,11 @@
  *           'icon'     => 'cookie',                            // chiave icona admin
  *           'count'    => function( $args = array() ) { ... }, // ritorna int
  *           'query'    => function( $args = array() ) { ... }, // ritorna array<row>
- *                                                              // ($args può contenere 'limit':
- *                                                              // le fonti dovrebbero rispettarlo)
- *           'export'   => function( $args = array() ) { ... }, // CSV streaming
+ *                                                              // ($args contiene 'limit' — alias
+ *                                                              // '_internal_limit' — da rispettare;
+ *                                                              // fino a 50000 per l'export CSV)
+ *           'export'   => function( $args = array() ) { ... }, // opzionale, riservato:
+ *                                                              // l'export CSV dell'Hub usa `query`
  *       );
  *       return $sources;
  *   } );
@@ -166,6 +168,10 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 			// consensi di grandi dimensioni. Le fonti che ignorano args['limit']
 			// continuano a funzionare (il troncamento finale resta).
 			$args['limit'] = max( 1, (int) $limit );
+			// 1.7.0: alias per le fonti scritte seguendo la vecchia
+			// documentazione (PRIVACY-INTEGRATION.md citava `_internal_limit`):
+			// senza, l'export CSV si fermava in silenzio a 1000 righe per fonte.
+			$args['_internal_limit'] = $args['limit'];
 
 			// Se l'utente ha chiesto una singola fonte, limita.
 			if ( ! empty( $args['source'] ) && isset( $sources[ $args['source'] ] ) ) {

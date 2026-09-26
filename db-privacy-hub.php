@@ -3,7 +3,7 @@
  * Plugin Name:       DB Privacy Hub
  * Plugin URI:        https://www.davidebertolino.it/progetti/db-privacy-hub/
  * Description:       Hub privacy unificato per l'ecosistema plugin DB. Raccoglie i trattamenti dichiarati dai plugin DB (Cookie Manager, Form Builder, SEO Manager…) e genera una Privacy Policy completa (artt. 13-14 GDPR) pronta da pubblicare come pagina WordPress. Importa automaticamente la Cookie Policy dal DB Cookie Manager se installato. Niente servizi esterni, niente tracciamento.
- * Version:           1.6.0
+ * Version:           1.7.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Davide Bertolino
@@ -16,6 +16,17 @@
  * @package DB_Privacy_Hub
  */
 
+/*
+ * Privacy capabilities (per references/PRIVACY-INTEGRATION.md):
+ *  - Personal data:        YES — log DSAR (wp_dbph_dsar_log): email mascherata +
+ *                          hash SHA-256 salato, nessuna email in chiaro
+ *  - Third-party scripts:  NO
+ *  - User consent:         NO — aggrega i consensi raccolti da altri plugin
+ *                          (dbph_consents_register), non ne raccoglie di propri
+ *  - DSAR-aware:           YES — è il router DSAR dell'ecosistema (DBPH_DSAR)
+ *  - Hub-aware:            YES — è l'Hub
+ */
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -23,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /* -------------------------------------------------------------------------
  * Costanti
  * ---------------------------------------------------------------------- */
-define( 'DBPH_VERSION', '1.6.0' );
+define( 'DBPH_VERSION', '1.7.0' );
 define( 'DBPH_FILE', __FILE__ );
 define( 'DBPH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DBPH_URL', plugin_dir_url( __FILE__ ) );
@@ -59,6 +70,12 @@ require_once DBPH_DIR . 'inc/class-admin.php';
  * altri plugin DB possano hookare normalmente.
  */
 function dbph_boot() {
+	// 1.7.0: marker versione allineato anche dopo un aggiornamento
+	// automatico (l'activation hook non gira sugli update).
+	if ( get_option( 'dbph_version' ) !== DBPH_VERSION ) {
+		update_option( 'dbph_version', DBPH_VERSION );
+	}
+
 	DBPH_Deprecated_Aliases::init();
 	DBPH_Register::init();
 	DBPH_Responsabili::init();

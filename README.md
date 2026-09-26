@@ -22,7 +22,9 @@ Il **DB Privacy Hub** raccoglie automaticamente le dichiarazioni di ogni plugin 
 - **Detection automatica destinatari** — riconosce reCAPTCHA configurato, plugin SMTP attivi, webhook host configurati nei form
 - **Ponte WooCommerce** — con WooCommerce attivo, dichiara automaticamente i trattamenti e-commerce (ordini, fatturazione, account, pagamenti) e rileva i gateway di pagamento abilitati come destinatari
 - **Importazione sezioni cookie** — se il DB Cookie Manager è installato, le sezioni cookie del documento vengono importate automaticamente (niente duplicazione di logica)
-- **Integrazione DSAR** — se il DB Form Builder 2.5.0+ è installato, la sezione "Diritti dell'interessato" menziona la procedura DSAR automatica
+- **Router DSAR** — i plugin DB dichiarano exporter/eraser via `dbph_user_data_exporters` / `dbph_user_data_erasers`; l'Hub li registra negli strumenti privacy di WordPress normalizzandone le risposte (un plugin non conforme non blocca più la richiesta degli altri) e la sezione "Diritti dell'interessato" descrive la procedura quando almeno un plugin la implementa
+- **Storico DSAR** — log di ogni richiesta di accesso/cancellazione (anche quelle create dall'admin senza email di conferma), con esito della cancellazione (dati rimossi / trattenuti e motivazioni degli eraser) e registrazione manuale delle richieste arrivate via email/PEC
+- **Storico Privacy Policy** — snapshot di ogni pubblicazione e di ogni modifica manuale della pagina privacy, con diff tra versioni; i consensi raccolti dai plugin DB sono collegati alla versione in vigore
 - **Pubblicazione one-click** — crea (o rigenera) una pagina WordPress con titolo e slug configurabili, e la imposta come `wp_page_for_privacy_policy` core
 - **Export `.md`** — scarica l'informativa come file Markdown
 - **Auto-update** — aggiornamenti distribuiti via GitHub Releases, visibili direttamente nel pannello WordPress
@@ -122,6 +124,42 @@ GPL v2 or later. Vedi `LICENSE`.
 Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'ecosistema plugin DB.
 
 ### Changelog
+
+#### 1.7.0 — Accountability DSAR, versioni policy affidabili, robustezza ecosistema _(2026)_
+
+Release correttiva nata da un audit dell'intero ecosistema privacy DB. Nessun breaking change: schema DB invariato, filter pubblici invariati (solo tolleranze aggiuntive).
+
+**Storico DSAR (`DBPH_DSAR_Log`):**
+- **Fix: le richieste "in attesa di conferma" non venivano mai registrate** — l'hook `user_request_action_email_content` leggeva `$email_data['request_id']`, chiave che WordPress non passa (l'oggetto è in `$email_data['request']`): la riga pending non veniva creata e il cron di scadenza non aveva nulla da marcare
+- **Fix: richieste create dall'admin senza email di conferma** (WP 5.7+) mai registrate — ora la riga viene creata alla creazione del CPT `user_request` (`save_post_user_request`), e il completamento di export/erase crea la riga se manca invece di aggiornare nel vuoto
+- **Esito della cancellazione** — nuovo aggancio a `wp_privacy_personal_data_erasure_page`: `items_removed` / `items_retained` vengono finalmente valorizzati e i messaggi degli eraser (es. "dati fiscali conservati 10 anni") finiscono nelle note della richiesta; lo stato "Parzialmente completata" viene assegnato quando almeno un eraser ha trattenuto dati (prima era irraggiungibile: il core marca sempre la richiesta come completata)
+
+**Router DSAR (`DBPH_DSAR`):**
+- **Risposte normalizzate** — ogni callback dichiarata via `dbph_user_data_exporters` / `dbph_user_data_erasers` viene avvolta in un normalizzatore: una lista piatta di item o una risposta senza `done` non interrompe più l'INTERA richiesta DSAR di tutti i plugin ("Expected data in response array"); con `WP_DEBUG` viene emesso un `_doing_it_wrong` che indica il plugin da correggere
+- Accettate in tolleranza anche le chiavi core `exporter_friendly_name` / `eraser_friendly_name` al posto di `label`
+
+**Storico Privacy Policy (`DBPH_Policy_Archive`):**
+- **Snapshot delle modifiche manuali** — ogni modifica pubblicata della pagina privacy (`wp_page_for_privacy_policy` o pagina gestita dall'Hub) crea uno snapshot "Modifica manuale": il version ID collegato ai consensi corrisponde ora al testo realmente pubblicato
+- **Niente versioni fantasma** — il confronto con l'ultimo snapshot ignora le date di generazione; rigenerare in un giorno diverso senza modifiche sostanziali ripubblica la versione esistente (la data "Ultimo aggiornamento" resta quella dell'ultima modifica reale). `content_hash` resta lo SHA-256 del contenuto esatto, verificabile
+- Lo snapshot archivia il `post_content` effettivamente salvato da WordPress (dopo kses), non l'HTML generato
+
+**Generatore Privacy Policy:**
+- **Fix: host webhook del Form Builder mai rilevati** — la detection leggeva il meta `_dbfb_webhook_url`, mai scritto dal Form Builder; ora legge `_dbfb_settings` (`enable_webhook` + `webhook_url`)
+- **Fix: testo DSAR non veritiero** — la policy prometteva "un modulo dedicato" che nessun plugin offre; il testo descrive ora la procedura reale (richiesta al titolare, email di conferma, export/cancellazione). La menzione compare se almeno un plugin DB dichiara exporter sull'Hub o espone un marker `XXX_DSAR_AVAILABLE` (prima solo il Form Builder); nuovo filter `dbph_dsar_available`
+- reCAPTCHA dichiarato solo se il Form Builder è attivo (l'option sopravviveva alla disattivazione)
+- **Dedup dei destinatari per nome** — più gateway dello stesso fornitore (Stripe + Stripe SEPA, PayPal ppcp-gateway + ppcp-card…) non producono più voci ripetute
+- Indice con ancore cliccabili verso le sezioni; reclamo al Garante descritto una sola volta (prima due volte, con due URL diversi), con riferimento agli artt. 77 e 79 GDPR
+
+**Bridge embed/social:**
+- **Meno falsi positivi** — rimossi i pattern `instagram.com/p/` e `maps.google.com/maps`, che scattavano anche sui semplici link (contro il principio "un link non trasferisce dati"); sostituiti da marker di embed veri (`instagram-media`, `output=embed`)
+- **Meno falsi negativi** — la scansione legge anche la cache oEmbed nei postmeta (URL incollati nell'editor classico) e i dati Elementor; una query per piattaforma invece di una per pattern
+- Detection pixel TikTok ristretta ai plugin pixel/business (prima qualunque plugin con "tiktok" nello slug)
+
+**Registro consensi e admin:**
+- Le fonti ricevono il limite anche come `_internal_limit` (alias per chi ha seguito la vecchia documentazione): l'export CSV non si ferma più in silenzio a 1000 righe per fonte
+- Export CSV (consensi e DSAR) protetti dalla CSV/formula injection; export DSAR senza più il tetto silenzioso di 5000 righe; filtri data validati (formato `Y-m-d`)
+- Il link "v#N" nel registro consensi apre lo snapshot corrispondente (l'ancora precedente non esisteva)
+- Le voci dei bridge WooCommerce ed embed sono marcate `_source = 'self'`; `dbph_version` viene aggiornata anche dopo un aggiornamento automatico; blocco "Privacy capabilities" nell'header del plugin
 
 #### 1.6.0 — Bridge social e contenuti incorporati _(2026)_
 

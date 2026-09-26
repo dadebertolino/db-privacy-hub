@@ -25,8 +25,94 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 		const SCHEMA_VERSION = '1.0';
 		const SCHEMA_OPTION  = 'dbph_policy_archive_schema';
 
+		/** @var bool True mentre l'Hub stesso pubblica la pagina (sospende l'hook su post_updated). */
+		private static $publishing = false;
+
 		public static function init() {
 			self::maybe_upgrade_schema();
+
+			// 1.7.0: snapshot automatico delle modifiche MANUALI alla pagina
+			// privacy. Senza, un consenso collegato alla versione vN poteva
+			// riferirsi a un testo diverso da quello realmente pubblicato.
+			add_action( 'post_updated', array( __CLASS__, 'on_post_updated' ), 10, 3 );
+		}
+
+		/**
+		 * Segnala che l'Hub sta pubblicando: le chiamate a wp_update_post()
+		 * fatte in questa finestra non generano snapshot "modifica manuale".
+		 *
+		 * @since 1.7.0
+		 * @param bool $on
+		 */
+		public static function set_publishing( $on ) {
+			self::$publishing = (bool) $on;
+		}
+
+		/**
+		 * Hook post_updated: se la pagina modificata è la Privacy Policy del
+		 * sito (o quella gestita dall'Hub) e il contenuto è cambiato, salva
+		 * uno snapshot.
+		 *
+		 * @since 1.7.0
+		 * @param int     $post_id
+		 * @param WP_Post $post_after
+		 * @param WP_Post $post_before
+		 */
+		public static function on_post_updated( $post_id, $post_after, $post_before ) {
+			if ( self::$publishing ) {
+				return;
+			}
+			$post_id = (int) $post_id;
+			$targets = array_filter(
+				array(
+					(int) get_option( 'wp_page_for_privacy_policy', 0 ),
+					(int) get_option( 'dbph_page_id', 0 ),
+				)
+			);
+			if ( ! in_array( $post_id, $targets, true ) ) {
+				return;
+			}
+			if ( $post_after->post_status !== 'publish' ) {
+				return;
+			}
+			if ( (string) $post_after->post_content === (string) $post_before->post_content ) {
+				return;
+			}
+			self::save(
+				(string) $post_after->post_content,
+				sprintf(
+					/* translators: 1: titolo pagina, 2: ID */
+					__( 'Modifica manuale di "%1$s" (ID %2$d)', 'db-privacy-hub' ),
+					$post_after->post_title,
+					$post_id
+				)
+			);
+		}
+
+		/**
+		 * Normalizza il contenuto per il confronto tra versioni: rimuove le
+		 * date di generazione (span.dbph-date), che cambiano ogni giorno
+		 * senza che il testo dell'informativa cambi.
+		 *
+		 * @since 1.7.0
+		 * @param string $content
+		 * @return string
+		 */
+		public static function normalize_for_compare( $content ) {
+			$content = preg_replace( '/<span class="dbph-date">[^<]*<\/span>/', '', (string) $content );
+			return trim( preg_replace( '/\s+/', ' ', $content ) );
+		}
+
+		/**
+		 * Ultimo snapshot salvato (con contenuto).
+		 *
+		 * @since 1.7.0
+		 * @return object|null
+		 */
+		public static function get_latest() {
+			global $wpdb;
+			$table = $wpdb->prefix . self::TABLE_NAME;
+			return $wpdb->get_row( "SELECT * FROM {$table} ORDER BY id DESC LIMIT 1" );
 		}
 
 		public static function maybe_upgrade_schema() {
@@ -75,9 +161,12 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
-			$last_hash = $wpdb->get_var( "SELECT content_hash FROM {$table} ORDER BY id DESC LIMIT 1" );
-			if ( $last_hash === $hash ) {
-				return false; // contenuto identico all'ultimo snapshot, skip.
+			// content_hash resta lo SHA-256 del contenuto esatto (verificabile),
+			// ma il confronto con l'ultimo snapshot ignora le date di generazione
+			// (1.7.0): rigenerare in un giorno diverso non crea una nuova versione.
+			$last = self::get_latest();
+			if ( $last && ( $last->content_hash === $hash || self::normalize_for_compare( $last->content ) === self::normalize_for_compare( $content ) ) ) {
+				return false; // contenuto equivalente all'ultimo snapshot, skip.
 			}
 
 			$ok = $wpdb->insert(

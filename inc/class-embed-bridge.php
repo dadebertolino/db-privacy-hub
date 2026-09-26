@@ -127,7 +127,10 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 				),
 				'instagram' => array(
 					'label'    => 'Instagram',
-					'patterns' => array( 'instagram.com/embed', 'instagram.com/p/', 'instgrm.Embeds' ),
+					// 1.7.0: rimosso 'instagram.com/p/' (matchava anche i semplici
+					// link ai post); `instagram-media` è la classe del blockquote
+					// di embed ufficiale.
+					'patterns' => array( 'instagram.com/embed', 'instagram-media', 'instgrm.Embeds' ),
 					'blocks'   => array( 'instagram' ),
 					'dest'     => array(
 						'name'        => 'Meta Platforms Ireland Ltd (Instagram)',
@@ -177,7 +180,10 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 				),
 				'google_maps' => array(
 					'label'    => 'Google Maps',
-					'patterns' => array( 'google.com/maps/embed', 'maps.google.com/maps' ),
+					// 1.7.0: rimosso 'maps.google.com/maps' (matchava i link
+					// "Come raggiungerci"); `output=embed` è il parametro
+					// dell'iframe Maps classico.
+					'patterns' => array( 'google.com/maps/embed', 'output=embed' ),
 					'blocks'   => array(),
 					'dest'     => array(
 						'name'        => 'Google Ireland Ltd (Google Maps)',
@@ -229,6 +235,15 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 		 * Scansiona i contenuti pubblicati alla ricerca di marker di embed.
 		 * Risultato cachato in transient 12h.
 		 *
+		 * Sorgenti (1.7.0):
+		 *  - post_content dei contenuti pubblici pubblicati;
+		 *  - cache oEmbed nei postmeta (`_oembed_*`): copre gli URL incollati
+		 *    su riga singola nell'editor classico, che WordPress trasforma in
+		 *    embed senza lasciare marker nel post_content;
+		 *  - dati Elementor (`_elementor_data`), che non stanno nel post_content.
+		 *
+		 * Una sola query per piattaforma e per sorgente (needle in OR).
+		 *
 		 * @return array<int,string> chiavi piattaforma rilevate
 		 */
 		public static function scan_content() {
@@ -248,29 +263,59 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 
 			$found = array();
 			foreach ( self::get_platforms() as $key => $platform ) {
-				$needles = $platform['patterns'];
+				$needles = (array) $platform['patterns'];
 				foreach ( (array) $platform['blocks'] as $block_slug ) {
 					// Marker del blocco Gutenberg embed: molto affidabile.
 					$needles[] = '"providerNameSlug":"' . $block_slug . '"';
 				}
+				if ( empty( $needles ) ) {
+					continue;
+				}
 
+				$likes = array();
 				foreach ( $needles as $needle ) {
-					$like = '%' . $wpdb->esc_like( $needle ) . '%';
-					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $types_in è esc_sql'd
-					$hit = $wpdb->get_var(
-						$wpdb->prepare(
-							"SELECT ID FROM {$wpdb->posts}
+					$likes[] = '%' . $wpdb->esc_like( $needle ) . '%';
+				}
+
+				// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $types_in è esc_sql'd; i placeholder sono generati per numero di needle.
+				$content_where = implode( ' OR ', array_fill( 0, count( $likes ), 'post_content LIKE %s' ) );
+				$hit           = $wpdb->get_var(
+					$wpdb->prepare(
+						"SELECT ID FROM {$wpdb->posts}
 						 WHERE post_status = 'publish'
 						   AND post_type IN ({$types_in})
-						   AND post_content LIKE %s
+						   AND ( {$content_where} )
 						 LIMIT 1",
-							$like
+						$likes
+					)
+				);
+
+				if ( ! $hit ) {
+					$meta_where = implode( ' OR ', array_fill( 0, count( $likes ), 'pm.meta_value LIKE %s' ) );
+					$hit        = $wpdb->get_var(
+						$wpdb->prepare(
+							"SELECT pm.post_id FROM {$wpdb->postmeta} pm
+							 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+							 WHERE p.post_status = 'publish'
+							   AND p.post_type IN ({$types_in})
+							   AND ( ( pm.meta_key LIKE %s AND pm.meta_key NOT LIKE %s ) OR pm.meta_key = %s )
+							   AND ( {$meta_where} )
+							 LIMIT 1",
+							array_merge(
+								array(
+									$wpdb->esc_like( '_oembed_' ) . '%',
+									$wpdb->esc_like( '_oembed_time_' ) . '%',
+									'_elementor_data',
+								),
+								$likes
+							)
 						)
 					);
-					if ( $hit ) {
-						$found[] = $key;
-						break;
-					}
+				}
+				// phpcs:enable
+
+				if ( $hit ) {
+					$found[] = $key;
 				}
 			}
 
@@ -290,7 +335,9 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 				'/pixelyoursite/i'              => 'PixelYourSite (Meta/Google/TikTok pixel)',
 				'/facebook-for-woocommerce/i'   => 'Facebook for WooCommerce (Meta pixel)',
 				'/official-facebook-pixel|meta-pixel/i' => 'Meta pixel',
-				'/tiktok/i'                     => 'TikTok pixel',
+				// 1.7.0: prima '/tiktok/i' matchava qualsiasi plugin TikTok
+				// (anche i semplici feed); ora solo i plugin pixel/business.
+				'/tiktok-for-business|tiktok-pixel|pixel-tiktok/i' => 'TikTok pixel',
 			);
 
 			$found = array();
@@ -326,6 +373,7 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 					'id'             => 'dbemb_embeds',
 					'label'          => __( 'Contenuti incorporati da piattaforme terze', 'db-privacy-hub' ),
 					'status'         => 'active',
+					'_source'        => 'self',
 					'purpose'        => sprintf(
 						/* translators: %s: elenco piattaforme */
 						__( 'Arricchimento dei contenuti del sito tramite elementi incorporati da piattaforme esterne (%s). Al caricamento di tali elementi il browser dell\'utente contatta i server della piattaforma.', 'db-privacy-hub' ),
@@ -344,6 +392,7 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 					'id'             => 'dbemb_pixel',
 					'label'          => __( 'Remarketing e misurazione pubblicitaria (pixel)', 'db-privacy-hub' ),
 					'status'         => 'active',
+					'_source'        => 'self',
 					'purpose'        => sprintf(
 						/* translators: %s: elenco pixel rilevati */
 						__( 'Misurazione delle campagne pubblicitarie e creazione di pubblici personalizzati tramite pixel di tracciamento (%s).', 'db-privacy-hub' ),

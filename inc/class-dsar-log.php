@@ -77,6 +77,17 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			add_action( 'wp_privacy_personal_data_export_file', array( __CLASS__, 'on_export_done' ), 10, 1 );
 			add_action( 'wp_privacy_personal_data_erased', array( __CLASS__, 'on_erase_done' ), 10, 1 );
 
+			// 1.7.0: registra la richiesta al momento della CREAZIONE del CPT
+			// user_request. Copre anche le richieste create dall'admin senza
+			// email di conferma (WP 5.7+), per cui né l'email né la conferma
+			// vengono mai emesse.
+			add_action( 'save_post_user_request', array( __CLASS__, 'on_request_created' ), 10, 3 );
+
+			// 1.7.0: aggrega l'esito dei singoli eraser (items_removed /
+			// items_retained / messages). Priority 5: prima che il core (10)
+			// marchi la richiesta come completata ed emetta wp_privacy_personal_data_erased.
+			add_filter( 'wp_privacy_personal_data_erasure_page', array( __CLASS__, 'on_erasure_page' ), 5, 5 );
+
 			// Cron giornaliero: marca come 'expired' le richieste pending da > 7 giorni.
 			add_action( 'dbph_dsar_cleanup_pending', array( __CLASS__, 'cron_expire_pending' ) );
 			if ( ! wp_next_scheduled( 'dbph_dsar_cleanup_pending' ) ) {
@@ -207,14 +218,49 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 * ================================================================== */
 
 		public static function on_request_email_sent( $email_text, $email_data ) {
-			$request_id = isset( $email_data['request_id'] ) ? (int) $email_data['request_id'] : 0;
-			if ( ! $request_id ) {
-				return $email_text;
+			// WP passa l'oggetto WP_User_Request in $email_data['request']
+			// (non esiste una chiave 'request_id': fino alla 1.6.0 questo hook
+			// usciva sempre subito e le richieste pending non venivano loggate).
+			$request = isset( $email_data['request'] ) ? $email_data['request'] : null;
+			if ( $request instanceof WP_User_Request ) {
+				self::ensure_row( $request, 'pending' );
 			}
+			return $email_text;
+		}
 
-			$request = wp_get_user_request( $request_id );
+		/**
+		 * Hook save_post_user_request: logga la richiesta alla creazione.
+		 *
+		 * @since 1.7.0
+		 * @param int     $post_id
+		 * @param WP_Post $post
+		 * @param bool    $update
+		 */
+		public static function on_request_created( $post_id, $post, $update ) {
+			if ( $update || wp_is_post_revision( $post_id ) ) {
+				return;
+			}
+			$request = wp_get_user_request( (int) $post_id );
 			if ( ! $request ) {
-				return $email_text;
+				return;
+			}
+			// Richiesta creata già confermata (admin senza email di conferma).
+			$status = ( $request->status === 'request-confirmed' ) ? 'confirmed' : 'pending';
+			self::ensure_row( $request, $status );
+		}
+
+		/**
+		 * Inserisce la riga di log per una richiesta WP se non esiste ancora.
+		 *
+		 * @since 1.7.0
+		 * @param WP_User_Request $request
+		 * @param string          $status  Stato iniziale se la riga va creata.
+		 * @return int ID della riga di log (esistente o nuova), 0 in caso di errore.
+		 */
+		private static function ensure_row( $request, $status ) {
+			$request_id = (int) $request->ID;
+			if ( ! $request_id ) {
+				return 0;
 			}
 
 			global $wpdb;
@@ -228,31 +274,30 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 				)
 			);
 			if ( $existing_id ) {
-				return $email_text;
+				return $existing_id;
 			}
 
-			$type  = self::normalize_type( (string) $request->action_name );
 			$email = (string) $request->email;
 			$now   = current_time( 'mysql' );
-			$requested_at = $request->date_created_gmt
-				? get_date_from_gmt( $request->date_created_gmt )
-				: $now;
-
-			$wpdb->insert(
-				$table,
-				array(
-					'request_id'    => $request_id,
-					'source'        => self::SOURCE_WP_NATIVE,
-					'email_hash'    => self::hash_email( $email ),
-					'email_display' => self::mask_email( $email ),
-					'request_type'  => $type,
-					'status'        => 'pending',
-					'requested_at'  => $requested_at,
-				),
-				array( '%d', '%s', '%s', '%s', '%s', '%s', '%s' )
+			$row   = array(
+				'request_id'    => $request_id,
+				'source'        => self::SOURCE_WP_NATIVE,
+				'email_hash'    => self::hash_email( $email ),
+				'email_display' => self::mask_email( $email ),
+				'request_type'  => self::normalize_type( (string) $request->action_name ),
+				'status'        => $status,
+				'requested_at'  => $request->created_timestamp
+					? get_date_from_gmt( gmdate( 'Y-m-d H:i:s', (int) $request->created_timestamp ) )
+					: $now,
 			);
+			$format = array( '%d', '%s', '%s', '%s', '%s', '%s', '%s' );
+			if ( $status === 'confirmed' ) {
+				$row['confirmed_at'] = $now;
+				$format[]            = '%s';
+			}
 
-			return $email_text;
+			$ok = $wpdb->insert( $table, $row, $format );
+			return $ok ? (int) $wpdb->insert_id : 0;
 		}
 
 		/**
@@ -373,6 +418,13 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
+			// 1.7.0: se la richiesta non è mai stata loggata (es. creata prima
+			// dell'installazione dell'Hub), crea la riga prima di aggiornarla.
+			$request = wp_get_user_request( $request_id );
+			if ( $request ) {
+				self::ensure_row( $request, 'confirmed' );
+			}
+
 			// Conta gli exporter registrati al momento (informativo).
 			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- hook core di WordPress, letto di proposito.
 			$exporters = (array) apply_filters( 'wp_privacy_personal_data_exporters', array() );
@@ -404,16 +456,24 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 				return;
 			}
 
-			$status = $request->status === 'request-completed' ? 'completed' : 'partial';
-
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
-			// NOTA: WordPress non espone un aggregato affidabile di
-			// items_removed/items_retained a questo punto del ciclo di vita
-			// (le risposte dei singoli eraser non vengono persistite). Le due
-			// colonne restano al loro valore di default invece di essere
-			// valorizzate con euristiche inattendibili.
+			self::ensure_row( $request, 'confirmed' );
+
+			// Il core marca SEMPRE la richiesta come completata prima di
+			// emettere questo hook: lo stato 'partial' lo ricaviamo quindi
+			// dall'aggregato raccolto da on_erasure_page() — se almeno un
+			// eraser ha trattenuto dati (es. obblighi fiscali), la
+			// cancellazione è parziale.
+			$retained = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT items_retained FROM {$table} WHERE request_id = %d LIMIT 1",
+					$request_id
+				)
+			);
+			$status = $retained ? 'partial' : 'completed';
+
 			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- hook core di WordPress, letto di proposito.
 			$erasers = (array) apply_filters( 'wp_privacy_personal_data_erasers', array() );
 			$wpdb->update(
@@ -427,6 +487,90 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 				array( '%s', '%s', '%d' ),
 				array( '%d' )
 			);
+		}
+
+		/**
+		 * Filter wp_privacy_personal_data_erasure_page: aggrega l'esito di
+		 * ogni pagina di ogni eraser sulla riga di log. Restituisce $response
+		 * inalterato.
+		 *
+		 * @since 1.7.0
+		 * @param array  $response     Risposta dell'eraser.
+		 * @param int    $eraser_index Indice 1-based dell'eraser.
+		 * @param string $email        Email dell'interessato.
+		 * @param int    $page         Pagina corrente.
+		 * @param int    $request_id   ID della richiesta.
+		 * @return array
+		 */
+		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- firma imposta dal filter core.
+		public static function on_erasure_page( $response, $eraser_index, $email, $page, $request_id ) {
+			$request_id = (int) $request_id;
+			if ( ! $request_id || ! is_array( $response ) ) {
+				return $response;
+			}
+			$request = wp_get_user_request( $request_id );
+			if ( ! $request ) {
+				return $response;
+			}
+
+			global $wpdb;
+			$table  = $wpdb->prefix . self::TABLE_NAME;
+			$row_id = self::ensure_row( $request, 'confirmed' );
+			if ( ! $row_id ) {
+				return $response;
+			}
+
+			// Primo eraser, prima pagina: nuova esecuzione (anche un re-run
+			// dall'admin), azzera l'aggregato precedente.
+			if ( 1 === (int) $eraser_index && 1 === (int) $page ) {
+				$wpdb->update(
+					$table,
+					array(
+						'items_removed'  => 0,
+						'items_retained' => 0,
+						'notes'          => '',
+					),
+					array( 'id' => $row_id ),
+					array( '%d', '%d', '%s' ),
+					array( '%d' )
+				);
+			}
+
+			$removed  = ! empty( $response['items_removed'] ) ? 1 : 0;
+			$retained = ! empty( $response['items_retained'] ) ? 1 : 0;
+			if ( $removed || $retained ) {
+				$wpdb->query(
+					$wpdb->prepare(
+						"UPDATE {$table} SET items_removed = GREATEST(items_removed, %d), items_retained = GREATEST(items_retained, %d) WHERE id = %d",
+						$removed,
+						$retained,
+						$row_id
+					)
+				);
+			}
+
+			// I messaggi degli eraser (es. "dati fiscali conservati 10 anni")
+			// sono la motivazione della conservazione: li accodiamo alle note.
+			if ( ! empty( $response['messages'] ) && is_array( $response['messages'] ) ) {
+				$lines = array();
+				foreach ( $response['messages'] as $msg ) {
+					$msg = trim( wp_strip_all_tags( (string) $msg ) );
+					if ( $msg !== '' ) {
+						$lines[] = '• ' . $msg;
+					}
+				}
+				if ( $lines ) {
+					$wpdb->query(
+						$wpdb->prepare(
+							"UPDATE {$table} SET notes = CONCAT(COALESCE(notes, ''), %s) WHERE id = %d",
+							"\n" . implode( "\n", $lines ),
+							$row_id
+						)
+					);
+				}
+			}
+
+			return $response;
 		}
 
 		/* =====================================================================

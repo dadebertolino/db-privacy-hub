@@ -740,6 +740,18 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			}
 
 			$content = DBPH_Policy_Generator::generate();
+
+			// 1.7.0: se il testo è equivalente all'ultima versione archiviata
+			// (cambia solo la data di generazione), ripubblichiamo esattamente
+			// quella versione: la data "Ultimo aggiornamento" resta la data
+			// dell'ultima modifica sostanziale e la pagina coincide con lo snapshot.
+			if ( class_exists( 'DBPH_Policy_Archive' ) ) {
+				$latest = DBPH_Policy_Archive::get_latest();
+				if ( $latest && DBPH_Policy_Archive::normalize_for_compare( $latest->content ) === DBPH_Policy_Archive::normalize_for_compare( $content ) ) {
+					$content = (string) $latest->content;
+				}
+			}
+
 			$title   = (string) get_option( 'dbph_page_title', __( 'Privacy Policy', 'db-privacy-hub' ) );
 			$slug    = (string) get_option( 'dbph_page_slug', 'privacy-policy' );
 
@@ -797,6 +809,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				);
 			}
 
+			DBPH_Policy_Archive::set_publishing( true );
 			$updated = wp_update_post(
 				array(
 					'ID'           => (int) $page_id,
@@ -805,6 +818,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				),
 				true
 			);
+			DBPH_Policy_Archive::set_publishing( false );
 
 			if ( is_wp_error( $updated ) || 0 === $updated ) {
 				wp_safe_redirect(
@@ -823,10 +837,13 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			update_option( 'dbph_page_id', (int) $page_id );
 			update_option( 'wp_page_for_privacy_policy', (int) $page_id );
 
-			// Snapshot del contenuto NUOVO appena pubblicato.
+			// Snapshot del contenuto NUOVO appena pubblicato. 1.7.0: archiviamo
+			// il post_content effettivamente salvato (kses può alterarlo per
+			// utenti senza unfiltered_html), non l'HTML generato.
 			if ( class_exists( 'DBPH_Policy_Archive' ) ) {
+				$saved = get_post( (int) $page_id );
 				DBPH_Policy_Archive::save(
-					$content,
+					$saved ? (string) $saved->post_content : $content,
 					sprintf(
 						/* translators: 1: titolo pagina, 2: ID */
 						__( 'Pubblicazione su "%1$s" (ID %2$d)', 'db-privacy-hub' ),
@@ -857,6 +874,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 		 * @return void
 		 */
 		private static function do_create_new_page( $title, $slug, $content ) {
+			DBPH_Policy_Archive::set_publishing( true );
 			$new_id = wp_insert_post(
 				array(
 					'post_title'   => $title,
@@ -867,6 +885,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				),
 				true
 			);
+			DBPH_Policy_Archive::set_publishing( false );
 
 			if ( is_wp_error( $new_id ) || 0 === $new_id ) {
 				wp_safe_redirect(
@@ -885,7 +904,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			update_option( 'wp_page_for_privacy_policy', (int) $new_id );
 
 			if ( class_exists( 'DBPH_Policy_Archive' ) ) {
-				DBPH_Policy_Archive::save( $content, __( 'Pubblicazione iniziale', 'db-privacy-hub' ) );
+				$saved = get_post( (int) $new_id );
+				DBPH_Policy_Archive::save( $saved ? (string) $saved->post_content : $content, __( 'Pubblicazione iniziale', 'db-privacy-hub' ) );
 			}
 
 			wp_safe_redirect(
@@ -1510,7 +1530,12 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			}
 			check_admin_referer( 'dbph_export_dsar_csv', '_dbph_nonce' );
 
-			$entries = DBPH_DSAR_Log::get_entries( 5000 );
+			// 1.7.0: nessun tetto silenzioso — il log viene letto a pagine.
+			$total   = DBPH_DSAR_Log::get_total_count();
+			$entries = array();
+			for ( $offset = 0; $offset < $total; $offset += 500 ) {
+				$entries = array_merge( $entries, DBPH_DSAR_Log::get_entries( 500, $offset ) );
+			}
 			$type_labels    = DBPH_DSAR_Log::get_type_labels();
 			$status_labels  = DBPH_DSAR_Log::get_status_labels();
 			$channel_labels = DBPH_DSAR_Log::get_channel_labels();
@@ -1554,20 +1579,22 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				$deadline = DBPH_DSAR_Log::calculate_deadline( $e );
 				fputcsv(
 					$out,
-					array(
-						$e->id,
-						$source_labels[ $e->source ] ?? $e->source,
-						$e->email_display,
-						$e->email_hash,
-						$type_labels[ $e->request_type ] ?? $e->request_type,
-						$status_labels[ $e->status ] ?? $e->status,
-						$channel_labels[ $e->channel ] ?? $e->channel,
-						$e->requested_at,
-						$e->confirmed_at,
-						$e->completed_at,
-						$deadline['days'],
-						$e->description,
-						$e->notes,
+					self::csv_row(
+						array(
+							$e->id,
+							$source_labels[ $e->source ] ?? $e->source,
+							$e->email_display,
+							$e->email_hash,
+							$type_labels[ $e->request_type ] ?? $e->request_type,
+							$status_labels[ $e->status ] ?? $e->status,
+							$channel_labels[ $e->channel ] ?? $e->channel,
+							$e->requested_at,
+							$e->confirmed_at,
+							$e->completed_at,
+							$deadline['days'],
+							$e->description,
+							$e->notes,
+						)
 					)
 				);
 			}
@@ -1706,8 +1733,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 			// Filtri da query string.
 			$args = array(
-				'date_from' => isset( $_GET['date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['date_from'] ) ) : '',
-				'date_to'   => isset( $_GET['date_to'] ) ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) ) : '',
+				'date_from' => isset( $_GET['date_from'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_from'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
+				'date_to'   => isset( $_GET['date_to'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_to'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
 				'subject'   => isset( $_GET['subject'] ) ? sanitize_text_field( wp_unslash( $_GET['subject'] ) ) : '',
 				'source'    => isset( $_GET['source'] ) ? sanitize_key( $_GET['source'] ) : '',
 			);
@@ -1843,7 +1870,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 										</td>
 										<td>
 											<?php if ( (int) $pver > 0 ) : ?>
-												<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_POLICY_HIST . '#v' . (int) $pver ) ); ?>">v#<?php echo (int) $pver; ?></a>
+												<a href="<?php echo esc_url( add_query_arg( 'view', (int) $pver, admin_url( 'admin.php?page=' . self::PAGE_POLICY_HIST ) ) ); ?>">v#<?php echo (int) $pver; ?></a>
 											<?php else : ?>
 												<span style="color:#9ca3af">—</span>
 											<?php endif; ?>
@@ -1873,8 +1900,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			check_admin_referer( 'dbph_export_consents_csv', '_dbph_nonce' );
 
 			$args = array(
-				'date_from' => isset( $_GET['date_from'] ) ? sanitize_text_field( wp_unslash( $_GET['date_from'] ) ) : '',
-				'date_to'   => isset( $_GET['date_to'] ) ? sanitize_text_field( wp_unslash( $_GET['date_to'] ) ) : '',
+				'date_from' => isset( $_GET['date_from'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_from'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
+				'date_to'   => isset( $_GET['date_to'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_to'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
 				'subject'   => isset( $_GET['subject'] ) ? sanitize_text_field( wp_unslash( $_GET['subject'] ) ) : '',
 				'source'    => isset( $_GET['source'] ) ? sanitize_key( $_GET['source'] ) : '',
 			);
@@ -1914,20 +1941,55 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 
 				fputcsv(
 					$out,
-					array(
-						$ts,
-						$src_lbl,
-						$subject,
-						$ctype,
-						$ctext,
-						$pver > 0 ? 'v#' . $pver : '',
-						is_array( $extra ) ? wp_json_encode( $extra ) : (string) $extra,
+					self::csv_row(
+						array(
+							$ts,
+							$src_lbl,
+							$subject,
+							$ctype,
+							$ctext,
+							$pver > 0 ? 'v#' . $pver : '',
+							is_array( $extra ) ? wp_json_encode( $extra ) : (string) $extra,
+						)
 					)
 				);
 			}
 
 			fclose( $out );
 			exit;
+		}
+
+		/* =====================================================================
+		 * Helper CSV / input (1.7.0)
+		 * ================================================================== */
+
+		/**
+		 * Neutralizza la CSV/formula injection: le celle che iniziano con
+		 * = + - @ (o tab/CR) vengono prefissate con un apice, così Excel e
+		 * LibreOffice non le interpretano come formule. Il contenuto arriva
+		 * anche da input dei visitatori (identificativi, testi di consenso).
+		 *
+		 * @param array $row
+		 * @return array
+		 */
+		private static function csv_row( array $row ) {
+			foreach ( $row as $i => $cell ) {
+				if ( is_string( $cell ) && $cell !== '' && strpos( "=+-@\t\r", $cell[0] ) !== false ) {
+					$row[ $i ] = "'" . $cell;
+				}
+			}
+			return $row;
+		}
+
+		/**
+		 * Accetta solo date Y-m-d (input type=date), altrimenti stringa vuota.
+		 *
+		 * @param mixed $raw
+		 * @return string
+		 */
+		private static function sanitize_ymd( $raw ) {
+			$raw = sanitize_text_field( (string) $raw );
+			return preg_match( '/^\d{4}-\d{2}-\d{2}$/', $raw ) ? $raw : '';
 		}
 	}
 }

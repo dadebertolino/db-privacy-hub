@@ -20,6 +20,9 @@
  * Tutti i campi sono obbligatori. Il Privacy Hub non valida né normalizza:
  * la responsabilità del contenuto è del plugin che dichiara.
  *
+ * Dalla 1.4.0 anche l'Hub dichiara voci proprie tramite i bridge
+ * (WooCommerce `dbwoo_*`, embed/social `dbemb_*`), marcate `_source = 'self'`.
+ *
  * @package DB_Privacy_Hub
  */
 
@@ -43,8 +46,9 @@ if ( ! class_exists( 'DBPH_Register' ) ) {
 		 * Restituisce l'elenco completo dei trattamenti, raccolti via filter.
 		 *
 		 * Annota ogni voce con `_source` ('self' = Hub, 'external' = altro
-		 * plugin). Il Hub stesso non dichiara trattamenti propri (non è il
-		 * titolare): tutte le voci provengono dai plugin DB collegati.
+		 * plugin). Le voci 'self' sono quelle generate dai bridge dell'Hub
+		 * (WooCommerce, embed/social) per conto di software che non conosce
+		 * i filter dbph_*.
 		 *
 		 * @return array
 		 */

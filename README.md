@@ -129,13 +129,21 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 - **Requisito minimo WordPress 6.0** (era 5.8), allineato a DB Cookie Manager: header, controllo all'attivazione e PHPCS
 - **Fix: termine DSAR dalla data di richiesta** — se alla conferma la riga del log non esisteva ancora (richieste create prima dell'attivazione del plugin o della 1.7.0), `requested_at` diventava il momento della conferma e i 30 giorni dell'art. 12.3 GDPR partivano in ritardo; in più PHP 8 emetteva un warning (`date_created_gmt` non esiste su `WP_User_Request`). Ora la data è quella di creazione della richiesta
+- **Fix: versione della policy dei consensi durante la sovrascrittura di una pagina** — il backup del testo sostituito diventava per un istante la versione corrente: un consenso registrato in quel momento (Cookie Manager, Form Builder) puntava al testo sbagliato. Ora l'archivio distingue versioni e backup (schema 1.1, migrazione automatica) e un backup non è mai la versione corrente
+- **Fix: pagine privacy duplicate** — il menu "Pagina di destinazione" non conteneva la pagina già collegata e ripiegava su "Crea nuova pagina": ogni pubblicazione creava `privacy-policy-2`, `-3`… Ora la pagina collegata è la scelta predefinita e si aggiorna senza avviso di sovrascrittura
+- **Termine di risposta DSAR di un mese** — come l'art. 12.3 GDPR e il testo della policy (prima 30 giorni, che a febbraio superano il mese); se il giorno non esiste nel mese successivo vale l'ultimo giorno del mese
+- **Cruscotto DSAR** — una cancellazione parziale conta come evasa, le richieste scadute o respinte come chiuse (prima risultavano pendenti); nuova casella "Aperte" con tutti i tipi di richiesta, anche artt. 16–22
+- **Conservazione dello storico DSAR** — nuova impostazione (default 5 anni, 0 = per sempre): le richieste chiuse più vecchie vengono eliminate ogni giorno; le richieste aperte e l'archivio della policy non vengono mai toccati
+- **Disinstallazione in multisite** — pulizia di ogni sito della rete secondo la sua impostazione "Conserva i dati"; rimossa anche la cache dell'updater. Eliminando un sito della rete vengono eliminate anche le tabelle dell'Hub di quel sito
+- **Date dell'archivio in ora locale** — come lo storico DSAR (prima nel fuso del server MySQL)
+- Avviso di salvataggio delle richieste DSAR manuali non più mostrato due volte
 - **Robustezza verso gli altri plugin** — un exporter/eraser o una fonte consensi che lancia un'eccezione non blocca più la richiesta DSAR o il registro consensi degli altri plugin (l'eraser fallito risulta "dati trattenuti", con un messaggio per la verifica manuale); filtri `dbph_policy_sections` / `dbph_policy_html` che restituiscono un tipo errato vengono ignorati invece di impedire la generazione della policy; righe consensi con campi non scalari normalizzate (niente più "Array" o errori in admin); voci non array del registro trattamenti scartate
-- **Scadenze DSAR coerenti** — badge in tabella e contatori del cruscotto usano la stessa regola (scaduta oltre 30 giorni, in scadenza sotto i 10), indipendente dal fuso orario di PHP
+- **Scadenze DSAR coerenti** — badge in tabella e contatori del cruscotto usano la stessa regola (scaduta oltre il termine, in scadenza sotto i 10 giorni), indipendente dal fuso orario di PHP
 - **Responsabili esterni** — i modelli aggiunti con `dbph_responsabili_templates` compaiono nel menu; una voce salvata senza id riceve un id stabile invece di uno nuovo a ogni lettura
 - **Export Markdown** — `<br>`, `<blockquote>`, `<img>`, `<iframe>` non vengono più trasformati in grassetto/corsivo; liste annidate indentate e liste numerate numerate
 - **Storico DSAR** — email con caratteri accentati o non latini mascherate per carattere (prima i caratteri multibyte venivano spezzati)
 - **Contenuti incorporati** — Google Maps riconosciuto solo dagli URL Maps (prima qualunque embed con `output=embed`); piattaforme aggiunte con `dbph_embed_platforms` senza tutti i campi non generano più warning; la cache della scansione non si azzera più a ogni revisione, autosalvataggio o ordine WooCommerce
-- **Suite di test** — unit (PHPUnit, PHP 7.4–8.4), integration (WordPress + MySQL reali, WordPress 6.0 e ultima versione), E2E (wp-env + Playwright) e run notturna su WordPress trunk e PHP 8.4; vedi `TESTING.md`
+- **Suite di test** — unit (PHPUnit, PHP 7.4–8.4), integration (WordPress + MySQL reali, WordPress 6.0 e ultima versione, anche multisite), E2E (wp-env + Playwright) e run notturna su WordPress trunk e PHP 8.4; vedi `TESTING.md`
 
 #### 1.7.0 — Accountability DSAR, versioni policy affidabili, robustezza ecosistema _(2026)_
 

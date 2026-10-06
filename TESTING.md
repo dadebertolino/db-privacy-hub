@@ -15,7 +15,7 @@ Il piano di lavoro (bug noti, test da scrivere fase per fase) è in
 | **lint** | `php -l` su PHP 7.4 e 8.3 | ogni push/PR |
 | **phpcs** | standard WordPress + compatibilità PHP 7.4+ | ogni push/PR |
 | **unit** | logica PHP pura (PHPUnit), matrice PHP 7.4–8.4 | ogni push/PR |
-| **integration** | WordPress + MySQL reali, su WordPress 6.0 (minimo) e ultima versione | dopo lint |
+| **integration** | WordPress + MySQL reali, su WordPress 6.0 (minimo), ultima versione e ultima versione multisite | dopo lint |
 | **e2e** | browser reale su wp-env (Playwright) | dopo lint, phpcs e unit |
 
 Le dipendenze npm sono fissate da `package-lock.json` (`npm ci`, con cache npm
@@ -75,6 +75,23 @@ I test estendono `Yoast\PHPUnitPolyfills\TestCases\TestCase` (metodi
 `dbph_boot()` gira su `plugins_loaded@5` e crea le tabelle fuori dalla
 transazione dei test. I test estendono `WP_UnitTestCase` e il loro file deve
 finire in `IntegrationTest.php`.
+
+Note:
+
+- ogni test parte da tabelle vuote con `DELETE FROM` (non `TRUNCATE`, che
+  chiuderebbe la transazione del test);
+- `SchemaUninstallIntegrationTest` fa DDL vero (ALTER, DROP): disattiva le
+  tabelle temporanee della test suite e in `tear_down()` ricrea tabelle e
+  option, con `COMMIT`;
+- i test `@group ms-required` girano solo con `WP_MULTISITE=1` (variante
+  multisite della CI), altrimenti vengono saltati;
+- il flusso di cancellazione usa le funzioni di
+  `wp-admin/includes/privacy-tools.php`, caricate dal test come fa l'admin.
+
+```bash
+# Variante multisite in locale
+WP_MULTISITE=1 WP_TESTS_DIR=/tmp/wordpress-tests-lib composer run test:integration
+```
 
 ## Fixture E2E
 

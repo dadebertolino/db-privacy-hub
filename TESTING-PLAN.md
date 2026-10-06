@@ -49,29 +49,30 @@ Priorità: **A** = dati legali o crash, **B** = dati errati in admin,
 | 1 ✅ | A | `class-dsar-log.php:370` | Legge `$request->date_created_gmt`, che su `WP_User_Request` non esiste (è `created_timestamp`). Warning PHP 8 a ogni conferma; `requested_at` diventa "adesso" → il termine GDPR di 30 giorni parte dalla conferma, non dalla richiesta. | Integration: richiesta creata 5 giorni fa, confermata oggi → `requested_at` = data di creazione. |
 | 2 ✅ | A | `class-policy-generator.php:63` | Un filtro `dbph_policy_sections` che restituisce un non-array → fatal in `array_map`; `dbph_policy_html` non è controllato. Un plugin terzo blocca la generazione. | Unit: filtro che restituisce `null`/stringa → policy generata comunque. |
 | 3 ✅ | A | `class-dsar.php`, `class-consents-register.php` | Le eccezioni dei callback DSAR/consensi di altri plugin non sono intercettate: un plugin rotto blocca la richiesta degli altri (contro quanto promette il README). | Unit/integration: un exporter che lancia eccezione, gli altri rispondono. |
-| 4 | A | `class-admin.php:800` (`do_overwrite_page`) | Il backup pre-sovrascrittura viene salvato come versione e diventa per un momento `dbph_policy_current_version`: un consenso registrato in quell'istante punta a un testo sbagliato. | Integration: dopo la sovrascrittura, la versione corrente è quella pubblicata e il backup è marcato come tale. |
-| 5 | B | `class-dsar-log.php:621` (`get_stats`) | Cancellazione `partial` contata come pendente; `expired` e `rejected` contati come aperti; tipi art. 16–22 esclusi. Il cruscotto sovrastima le richieste pendenti. | Unit/integration su un set di righe con tutti gli stati. |
+| 4 ✅ | A | `class-admin.php:800` (`do_overwrite_page`) | Il backup pre-sovrascrittura viene salvato come versione e diventa per un momento `dbph_policy_current_version`: un consenso registrato in quell'istante punta a un testo sbagliato. | Integration: dopo la sovrascrittura, la versione corrente è quella pubblicata e il backup è marcato come tale. |
+| 5 ✅ | B | `class-dsar-log.php:621` (`get_stats`) | Cancellazione `partial` contata come pendente; `expired` e `rejected` contati come aperti; tipi art. 16–22 esclusi. Il cruscotto sovrastima le richieste pendenti. | Unit/integration su un set di righe con tutti gli stati. |
 | 6 ✅ | B | `get_stats` vs `calculate_deadline` | Scadenza calcolata in SQL (`INTERVAL 30 DAY`) e in PHP (giorni arrotondati): ai bordi badge e contatori non coincidono. | Unit: richiesta a 29, 30, 31 giorni. |
-| 7 | B | `class-admin.php` (`do_create_new_page`) | "Nuova pagina" ripetuto crea pagine duplicate (`-2`, `-3`) invece di riusare `dbph_page_id`. | E2E: due pubblicazioni → una sola pagina privacy. |
-| 8 | B | `class-admin.php:1136-1149` | Avviso di conferma DSAR manuale mostrato due volte; `sanitize_key($_GET[...])` senza `wp_unslash` (anche 1739, 1906). | E2E: un solo avviso. |
+| 7 ✅ | B | `class-admin.php` (`do_create_new_page`) | "Nuova pagina" ripetuto crea pagine duplicate (`-2`, `-3`) invece di riusare `dbph_page_id`. | E2E: due pubblicazioni → una sola pagina privacy. |
+| 8 ✅ | B | `class-admin.php:1136-1149` | Avviso di conferma DSAR manuale mostrato due volte; `sanitize_key($_GET[...])` senza `wp_unslash` (anche 1739, 1906). | E2E: un solo avviso. |
 | 9 ✅ | B | `class-responsabili.php:201` | Modelli aggiunti con `dbph_responsabili_templates` non compaiono nel menu (etichette fisse). | Unit + E2E. |
 | 10 ✅ | B | `class-responsabili.php:93` | Id generato da `microtime`: un responsabile senza id ne riceve uno diverso a ogni lettura. | Unit: due letture → stesso id. |
 | 11 ✅ | C | `class-admin.php:1863` | `mb_substr` su `consent_text` non stringa → TypeError; `esc_html` su valori non scalari → "Array" nel testo. | Unit sui contratti con dati malformati. |
 | 12 ✅ | C | `html_to_markdown()` | Le regex `<b…>`/`<i…>` catturano anche `<br>`, `<blockquote>`, `<img>`, `<iframe>`; liste annidate appiattite. | Unit con casi dedicati. |
 | 13 ✅ | C | `class-dsar-log.php` (`mask_email`) | `substr`/`strlen` a byte: email con caratteri multibyte mascherate male. | Unit. |
-| 14 | C | `uninstall.php` | Niente ciclo multisite; non rimuove il transient dell'updater. | Integration. |
+| 14 ✅ | C | `uninstall.php` | Niente ciclo multisite; non rimuove il transient dell'updater. | Integration. |
 | 15 ⏸ | C | `class-updater.php` | `post_install` attiva il plugin anche se era disattivato; `zipball_url` letto senza controllo. Stesso codice condiviso con gli altri plugin DB: correggere ovunque. | Unit. |
 | 16 ✅ | C | `class-embed-bridge.php` | Cache della scansione invalidata a ogni `save_post` (revisioni, autosalvataggi, ordini Woo); pattern `output=embed` attribuisce a Google Maps qualunque embed. Piattaforme dal filtro senza `patterns`/`blocks`/`label` → warning. | Unit + integration. |
-| 17 ½ | C | Fusi orari | Archivio in ora MySQL, log DSAR in ora WordPress; `strtotime` presuppone fuso PHP UTC. | Unit con fuso diverso. |
+| 17 ✅ | C | Fusi orari | Archivio in ora MySQL, log DSAR in ora WordPress; `strtotime` presuppone fuso PHP UTC. | Unit con fuso diverso. |
 | 18 | C | `languages/` | Cartella assente ma caricata da `load_plugin_textdomain`. | — |
-| 19 | C | Testo policy | La policy dice "entro un mese", il codice usa 30 giorni. Allineare il testo o il calcolo. | — |
+| 19 ✅ | C | Testo policy | La policy dice "entro un mese", il codice usa 30 giorni. Allineare il testo o il calcolo. | — |
 
 Nessuna SQL injection trovata; nonce e capability presenti su ogni handler.
 
-Legenda: ✅ corretto con test · ½ corretto in parte (17: scadenze DSAR;
-restano archivio e log in fusi diversi, Fase 2) · ⏸ rinviato (15: codice
-condiviso da tutti i plugin DB, va corretto in un passaggio dedicato su tutti
-i repository).
+Legenda: ✅ corretto con test · ⏸ rinviato (15: codice condiviso da tutti i
+plugin DB, va corretto in un passaggio dedicato su tutti i repository).
+Bug 7 e 8 sono corretti in Fase 2 (causa del 7: la pagina collegata mancava
+dal menu di destinazione); i test E2E che li provano arrivano in Fase 3.
+Bug 19: allineato il calcolo al testo (un mese di calendario, art. 12.3).
 
 ---
 
@@ -147,29 +148,42 @@ nomi:
 Verifica della regola §8: con i sorgenti di `main` falliscono i test di
 tutti i bug corretti in questa fase.
 
-## 5. Fase 2 — Integration test (stima 40–50)
+## 5. Fase 2 — Integration test (2026-10-06)
 
-WordPress + MySQL reali (`WP_UnitTestCase`).
+WordPress + MySQL reali (`WP_UnitTestCase`), WordPress 6.0 e latest, più una
+variante multisite.
 
-- [ ] **Ciclo DSAR completo** con le funzioni core: `wp_create_user_request`
-      → email di conferma → conferma → export (`completed`) → cancellazione
-      con eraser che trattiene dati (`partial`, messaggi nelle note) →
-      scadenza via cron dei `pending` oltre 7 giorni. Include il bug 1.
-- [ ] **DSAR manuali**: inserimento, modifica, cancellazione solo delle righe
-      manuali; tipi art. 16–22.
-- [ ] **Statistiche** (`get_stats`) su righe di ogni stato (bug 5, 6).
-- [ ] **Archivio**: deduplica (hash e normalizzazione), modifica manuale della
-      pagina privacy, `get_current_version_id()` con e senza opzione,
-      backup pre-sovrascrittura (bug 4).
-- [ ] **Generazione** con plugin finti registrati sui filtri.
-- [ ] **Schema**: creazione tabelle, migrazione `1.0 → 2.0` del log DSAR.
-- [ ] **Disinstallazione**: con e senza "conserva dati"; multisite (bug 14).
+- [x] **Ciclo DSAR completo** (`DsarLifecycleIntegrationTest`):
+      `wp_create_user_request` → email di conferma (senza duplicati) →
+      conferma → export (`completed`) → cancellazione completa, parziale
+      (messaggi nelle note) e con eraser che lancia → scadenza via cron dei
+      `pending` oltre 7 giorni. Bug 1 in `DsarRequestedAtIntegrationTest`.
+- [x] **DSAR manuali e statistiche** (`DsarManualStatsIntegrationTest`):
+      tutti i tipi artt. 15–22 e 7.3, modifica/eliminazione solo delle
+      manuali, `get_stats` su ogni stato (bug 5), contatori SQL = badge PHP
+      (bug 6, 19), retention.
+- [x] **Archivio e pubblicazione** (`PolicyArchivePublishIntegrationTest`):
+      deduplica, modifica manuale della pagina, `get_current_version_id()`
+      con e senza option, ora locale (bug 17), backup pre-sovrascrittura mai
+      corrente, neanche durante il salvataggio (bug 4), nessun duplicato
+      aggiornando la pagina collegata.
+- [x] **Generazione ed embed** (`GenerationEmbedIntegrationTest`): plugin
+      finti sui filtri, alias legacy, filtro rotto; scansione SQL di
+      post_content, blocchi Gutenberg e cache oEmbed; invalidazione della
+      cache (bug 16).
+- [x] **Schema e disinstallazione** (`SchemaUninstallIntegrationTest`):
+      migrazioni log DSAR 1.0 → 2.0 e archivio 1.0 → 1.1, attivazione pulita,
+      uninstall con e senza "conserva dati", multisite (bug 14).
+- [x] **Retention DSAR** (decisione §7): opzione `dbph_dsar_retention_years`
+      (default 5, 0 = mai), cron giornaliero, solo richieste chiuse.
 
 ## 6. Fase 3 — E2E (stima 30–40)
 
 - [ ] **Titolare e pubblicazione**: salvataggio, pagina creata e impostata
       come pagina privacy di WordPress, rigenerazione, sovrascrittura di una
-      pagina esistente con avviso, nessun duplicato (bug 7), export `.md`.
+      pagina esistente con avviso, nessun duplicato (bug 7: due
+      pubblicazioni di fila dal menu predefinito), export `.md`.
+- [ ] **Impostazioni**: retention DSAR salvata e limitata a 0–20.
 - [ ] **Responsabili**: aggiunta, modelli, salvataggio.
 - [ ] **DSAR negli strumenti WordPress** (Strumenti → Esporta / Cancella dati
       personali): la richiesta compare nello storico DSAR con stato e date

@@ -31,7 +31,7 @@ Il **DB Privacy Hub** raccoglie automaticamente le dichiarazioni di ogni plugin 
 
 ### Requisiti
 
-- WordPress 5.8+
+- WordPress 6.0+
 - PHP 7.4+
 - (Opzionale ma consigliato) DB Cookie Manager 3.1.0+ per integrazione cookie
 
@@ -124,6 +124,11 @@ GPL v2 or later. Vedi `LICENSE`.
 Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'ecosistema plugin DB.
 
 ### Changelog
+
+#### 1.7.1 — _(in preparazione)_
+
+- **Requisito minimo WordPress 6.0** (era 5.8), allineato a DB Cookie Manager: header, controllo all'attivazione e PHPCS
+- **Suite di test** — unit (PHPUnit, PHP 7.4–8.4), integration (WordPress + MySQL reali, WordPress 6.0 e ultima versione), E2E (wp-env + Playwright) e run notturna su WordPress trunk e PHP 8.4; vedi `TESTING.md`
 
 #### 1.7.0 — Accountability DSAR, versioni policy affidabili, robustezza ecosistema _(2026)_
 

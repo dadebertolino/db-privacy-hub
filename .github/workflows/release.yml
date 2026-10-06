@@ -51,10 +51,29 @@ jobs:
             --exclude 'phpcs.xml.dist' \
             --exclude '.distignore' \
             --exclude '.gitignore' \
+            --exclude 'tests' \
+            --exclude 'bin' \
+            --exclude 'package.json' \
+            --exclude 'package-lock.json' \
+            --exclude 'playwright.config.js' \
+            --exclude 'playwright-report' \
+            --exclude 'test-results' \
+            --exclude 'phpunit.xml.dist' \
+            --exclude 'phpunit-integration.xml.dist' \
+            --exclude '.phpunit.result.cache' \
+            --exclude '.wp-env.json' \
+            --exclude 'TESTING.md' \
+            --exclude 'TESTING-PLAN.md' \
+            --exclude '.DS_Store' \
             --exclude '*.zip'
           cd build
           zip -r "db-privacy-hub.zip" db-privacy-hub
           unzip -l db-privacy-hub.zip | head -20
+          # Nessun file di sviluppo nel pacchetto distribuito.
+          if unzip -l db-privacy-hub.zip | grep -E 'db-privacy-hub/(tests|bin|node_modules|vendor)/|package(-lock)?\.json|phpunit|playwright|\.wp-env|TESTING'; then
+            echo "::error::Lo ZIP contiene file di sviluppo."
+            exit 1
+          fi
 
       - name: Create GitHub Release with asset
         uses: softprops/action-gh-release@v2

@@ -1,0 +1,203 @@
+# DB Privacy Hub — Piano di test e correzioni
+
+Documento di lavoro per portare il Privacy Hub allo stesso livello di test del
+DB Cookie Manager (unit + integration + E2E + run notturna). Si segue fase per
+fase; ogni fase è una PR. Le caselle si spuntano man mano.
+
+Base di partenza: v1.7.0 (analisi del 2026-10-06).
+
+---
+
+## 1. Situazione attuale
+
+- ~6.000 righe PHP in 12 classi (`inc/`), nessun JS.
+- **Nessun test.** CI (`.github/workflows/ci.yml`): `php -l` su PHP 7.4 e 8.3,
+  PHPCS, PHPCompatibilityWP 7.4+. Release da tag `v*` (`release.yml`).
+- Il plugin non ha frontend dinamico. Il valore sta in:
+  1. **contratti tra plugin** (filtri che gli altri plugin DB alimentano);
+  2. **generazione e archivio della Privacy Policy** con le versioni;
+  3. **log DSAR** agganciato agli strumenti privacy di WordPress.
+
+Quindi la piramide pesa su **unit + integration**; gli E2E coprono l'admin, il
+flusso DSAR negli strumenti di WordPress e l'**ecosistema** (Hub + Cookie
+Manager installati insieme).
+
+### Contratti pubblici (da proteggere con i test)
+
+| Filtro / API | Forma attesa | Consumatore |
+|---|---|---|
+| `dbph_processing_register` | `array<{id,label,status,purpose,legal_basis,data_collected,retention,transfers}>` | `DBPH_Register::collect()` |
+| `dbseo_processing_register` (legacy, via in 2.0) | come sopra, dedup per `id` | `DBPH_Deprecated_Aliases::merge_legacy()` (prio 999) |
+| `dbph_policy_destinatari` | `array<{name,description,country}>` | `section_destinatari()` |
+| `dbph_policy_sections` | `array<key ⇒ html>` | `DBPH_Policy_Generator::generate()` |
+| `dbph_policy_html` | stringa HTML | `generate()` |
+| `dbph_user_data_exporters` / `_erasers` | `array<key ⇒ {label, callback(email,page)}>` | `DBPH_DSAR::register_*` (prio 20) |
+| `dbph_consents_register` | `array<key ⇒ {label, icon, count(args), query(args)}>` | `DBPH_Consents_Register` |
+| `dbph_responsabili_templates`, `dbph_embed_platforms`, `dbph_woo_bridge_enabled`, `dbph_embed_bridge_enabled`, `dbph_dsar_available` | vedi codice | — |
+| `DBPH_Policy_Archive::get_current_version_id()` | `int` (0 se nessuna versione) | DB Cookie Manager, DB Form Builder (registro consensi) |
+| `DBCM_Policy_Generator::get_sections()` (uscente) | `array<key ⇒ html>` | `section_cookie()` |
+
+---
+
+## 2. Bug noti (da correggere, ciascuno con il suo test)
+
+Priorità: **A** = dati legali o crash, **B** = dati errati in admin,
+**C** = qualità/robustezza.
+
+| # | Pri. | Dove | Problema | Test che lo prova |
+|---|---|---|---|---|
+| 1 | A | `class-dsar-log.php:370` | Legge `$request->date_created_gmt`, che su `WP_User_Request` non esiste (è `created_timestamp`). Warning PHP 8 a ogni conferma; `requested_at` diventa "adesso" → il termine GDPR di 30 giorni parte dalla conferma, non dalla richiesta. | Integration: richiesta creata 5 giorni fa, confermata oggi → `requested_at` = data di creazione. |
+| 2 | A | `class-policy-generator.php:63` | Un filtro `dbph_policy_sections` che restituisce un non-array → fatal in `array_map`; `dbph_policy_html` non è controllato. Un plugin terzo blocca la generazione. | Unit: filtro che restituisce `null`/stringa → policy generata comunque. |
+| 3 | A | `class-dsar.php`, `class-consents-register.php` | Le eccezioni dei callback DSAR/consensi di altri plugin non sono intercettate: un plugin rotto blocca la richiesta degli altri (contro quanto promette il README). | Unit/integration: un exporter che lancia eccezione, gli altri rispondono. |
+| 4 | A | `class-admin.php:800` (`do_overwrite_page`) | Il backup pre-sovrascrittura viene salvato come versione e diventa per un momento `dbph_policy_current_version`: un consenso registrato in quell'istante punta a un testo sbagliato. | Integration: dopo la sovrascrittura, la versione corrente è quella pubblicata e il backup è marcato come tale. |
+| 5 | B | `class-dsar-log.php:621` (`get_stats`) | Cancellazione `partial` contata come pendente; `expired` e `rejected` contati come aperti; tipi art. 16–22 esclusi. Il cruscotto sovrastima le richieste pendenti. | Unit/integration su un set di righe con tutti gli stati. |
+| 6 | B | `get_stats` vs `calculate_deadline` | Scadenza calcolata in SQL (`INTERVAL 30 DAY`) e in PHP (giorni arrotondati): ai bordi badge e contatori non coincidono. | Unit: richiesta a 29, 30, 31 giorni. |
+| 7 | B | `class-admin.php` (`do_create_new_page`) | "Nuova pagina" ripetuto crea pagine duplicate (`-2`, `-3`) invece di riusare `dbph_page_id`. | E2E: due pubblicazioni → una sola pagina privacy. |
+| 8 | B | `class-admin.php:1136-1149` | Avviso di conferma DSAR manuale mostrato due volte; `sanitize_key($_GET[...])` senza `wp_unslash` (anche 1739, 1906). | E2E: un solo avviso. |
+| 9 | B | `class-responsabili.php:201` | Modelli aggiunti con `dbph_responsabili_templates` non compaiono nel menu (etichette fisse). | Unit + E2E. |
+| 10 | B | `class-responsabili.php:93` | Id generato da `microtime`: un responsabile senza id ne riceve uno diverso a ogni lettura. | Unit: due letture → stesso id. |
+| 11 | C | `class-admin.php:1863` | `mb_substr` su `consent_text` non stringa → TypeError; `esc_html` su valori non scalari → "Array" nel testo. | Unit sui contratti con dati malformati. |
+| 12 | C | `html_to_markdown()` | Le regex `<b…>`/`<i…>` catturano anche `<br>`, `<blockquote>`, `<img>`, `<iframe>`; liste annidate appiattite. | Unit con casi dedicati. |
+| 13 | C | `class-dsar-log.php` (`mask_email`) | `substr`/`strlen` a byte: email con caratteri multibyte mascherate male. | Unit. |
+| 14 | C | `uninstall.php` | Niente ciclo multisite; non rimuove il transient dell'updater. | Integration. |
+| 15 | C | `class-updater.php` | `post_install` attiva il plugin anche se era disattivato; `zipball_url` letto senza controllo. Stesso codice condiviso con gli altri plugin DB: correggere ovunque. | Unit. |
+| 16 | C | `class-embed-bridge.php` | Cache della scansione invalidata a ogni `save_post` (revisioni, autosalvataggi, ordini Woo); pattern `output=embed` attribuisce a Google Maps qualunque embed. Piattaforme dal filtro senza `patterns`/`blocks`/`label` → warning. | Unit + integration. |
+| 17 | C | Fusi orari | Archivio in ora MySQL, log DSAR in ora WordPress; `strtotime` presuppone fuso PHP UTC. | Unit con fuso diverso. |
+| 18 | C | `languages/` | Cartella assente ma caricata da `load_plugin_textdomain`. | — |
+| 19 | C | Testo policy | La policy dice "entro un mese", il codice usa 30 giorni. Allineare il testo o il calcolo. | — |
+
+Nessuna SQL injection trovata; nonce e capability presenti su ogni handler.
+
+---
+
+## 3. Fase 0 — Infrastruttura
+
+Riusare dal DB Cookie Manager (`../db-cookie-manager`), adattando prefissi e
+nomi:
+
+- [x] `composer.json`: `phpunit/phpunit ^9.6`, `yoast/phpunit-polyfills`;
+      script `test:unit`, `test:integration`.
+- [x] `phpunit.xml.dist` (suite `unit`) e `phpunit-integration.xml.dist`.
+- [x] `tests/unit/bootstrap.php` con stub WordPress minimi (filtri con
+      priorità e `accepted_args`, option, transient, `_doing_it_wrong`
+      registrato) + `InfraTest`.
+- [x] `bin/install-wp-tests.sh` (copiato dal Cookie Manager: supporta
+      `trunk` e `curl -f`) e `tests/integration/bootstrap.php` +
+      `InfraIntegrationTest`.
+- [x] `package.json` + `package-lock.json` (Playwright, `@wordpress/env`,
+      `@axe-core/playwright`), `playwright.config.js` con progetto `setup`.
+- [x] `.wp-env.json`: plugin `.` + mu-plugin di fixture. Il Cookie Manager
+      per l'ecosistema si aggiunge in Fase 3 (in CI non c'è `../`: servirà la
+      sorgente GitHub `dadebertolino/db-cookie-manager`).
+- [x] `tests/fixtures/dbph-e2e-fixture.php`: endpoint REST di reset
+      (`dbph-e2e/v1/reset`, `/state`), plugin "finti" che dichiarano
+      trattamenti, destinatari, consensi, exporter ed eraser (anche
+      volutamente malformati, attivabili via reset), WooCommerce on/off.
+- [x] `tests/e2e/helpers.js`, `auth.setup.js` (login admin), `infra.spec.js`.
+- [x] `bin/setup-e2e.sh`: permalink, plugin attivo, WooCommerce installato ma
+      spento (lo accende il reset), stato baseline.
+- [x] CI: job `unit` (PHP 7.4–8.4), `integration` (MySQL, WordPress 6.0 e
+      latest), `e2e` tramite workflow riutilizzabile; `nightly.yml` su
+      WordPress trunk e PHP 8.4.
+- [x] `.gitignore`: `composer.lock` resta ignorato (solo dipendenze di
+      sviluppo, risolte per PHP); aggiunti `tests/e2e/.auth/`,
+      `playwright-report/`, `test-results/`, `.phpunit.result.cache`.
+- [x] `release.yml`: esclusi dallo ZIP `tests/`, `bin/`, `package*.json`,
+      `playwright.config.js`, `phpunit*.xml.dist`, `.wp-env.json`,
+      `TESTING*.md`; controllo che lo ZIP non contenga file di sviluppo.
+- [x] `TESTING.md` con struttura e comandi.
+- [x] Requisito WordPress 6.0 (decisione §7): header, controllo
+      all'attivazione, `phpcs.xml.dist`, README, changelog 1.7.1.
+
+## 4. Fase 1 — Unit test (stima 80–100)
+
+- [ ] **DSAR router**: `normalize_export_response`, `normalize_erase_response`
+      (tutte le forme: dati non array, `done` mancante, liste piatte, non-array);
+      registrazione con callback non callable, chiavi vuote, chiavi in
+      collisione, etichetta di ripiego.
+- [ ] **Registro trattamenti**: `collect()` con voci non array, filtro che
+      restituisce `null`/scalare, `count_by_source()`.
+- [ ] **Alias legacy**: unione `dbseo_processing_register`, dedup per `id`,
+      ricorsione evitata, voci senza `id` scartate.
+- [ ] **Responsabili**: `sanitize_entry` (campi, URL, `extra_ue`), salvataggio
+      che scarta voci senza nome, modelli e etichette (bug 9, 10).
+- [ ] **Archivio policy**: `normalize_for_compare` (data, spazi).
+- [ ] **Generatore**: sezioni e ordine; numerazione con e senza sezione
+      cookie; titolare non configurato; destinatari (dedup per nome,
+      esclusione dei responsabili dichiarati, voci malformate); paragrafo DSAR
+      con `has_db_dsar`; filtri `dbph_policy_sections` / `_html` malformati
+      (bug 2).
+- [ ] **Markdown**: `html_to_markdown` su titoli, liste, tabelle, link,
+      grassetto/corsivo, `<br>`/`<blockquote>` (bug 12).
+- [ ] **Log DSAR**: `calculate_deadline` (ok, in scadenza, scaduto, ai
+      bordi), `mask_email` (multibyte), `hash_email`, tipi/stati/canali.
+- [ ] **CSV**: protezione formula injection (`csv_row`), `sanitize_ymd`.
+- [ ] **Consensi**: `get_sources` (scarti, collisioni), `query_all`
+      (ordinamento, limite, sorgente singola), callback che lanciano (bug 3).
+- [ ] **Bridge Woo**: mappa gateway, gateway offline esclusi, sezione diritti.
+- [ ] **Bridge embed**: catalogo piattaforme, piattaforme manuali, piattaforme
+      malformate dal filtro, rilevamento pixel.
+
+## 5. Fase 2 — Integration test (stima 40–50)
+
+WordPress + MySQL reali (`WP_UnitTestCase`).
+
+- [ ] **Ciclo DSAR completo** con le funzioni core: `wp_create_user_request`
+      → email di conferma → conferma → export (`completed`) → cancellazione
+      con eraser che trattiene dati (`partial`, messaggi nelle note) →
+      scadenza via cron dei `pending` oltre 7 giorni. Include il bug 1.
+- [ ] **DSAR manuali**: inserimento, modifica, cancellazione solo delle righe
+      manuali; tipi art. 16–22.
+- [ ] **Statistiche** (`get_stats`) su righe di ogni stato (bug 5, 6).
+- [ ] **Archivio**: deduplica (hash e normalizzazione), modifica manuale della
+      pagina privacy, `get_current_version_id()` con e senza opzione,
+      backup pre-sovrascrittura (bug 4).
+- [ ] **Generazione** con plugin finti registrati sui filtri.
+- [ ] **Schema**: creazione tabelle, migrazione `1.0 → 2.0` del log DSAR.
+- [ ] **Disinstallazione**: con e senza "conserva dati"; multisite (bug 14).
+
+## 6. Fase 3 — E2E (stima 30–40)
+
+- [ ] **Titolare e pubblicazione**: salvataggio, pagina creata e impostata
+      come pagina privacy di WordPress, rigenerazione, sovrascrittura di una
+      pagina esistente con avviso, nessun duplicato (bug 7), export `.md`.
+- [ ] **Responsabili**: aggiunta, modelli, salvataggio.
+- [ ] **DSAR negli strumenti WordPress** (Strumenti → Esporta / Cancella dati
+      personali): la richiesta compare nello storico DSAR con stato e date
+      corretti; export CSV.
+- [ ] **DSAR manuale**: form, modifica, eliminazione, avviso singolo (bug 8).
+- [ ] **Registro consensi**: filtri, export CSV.
+- [ ] **Storico policy**: elenco versioni, vista singola, confronto.
+- [ ] **WooCommerce**: con un gateway online attivo compaiono trattamenti e
+      destinatario.
+- [ ] **Ecosistema con DB Cookie Manager** (entrambi montati in wp-env):
+  - sezioni cookie importate nella policy;
+  - un consenso dal banner del Cookie Manager registra
+    `policy_version` = versione corrente dell'Hub;
+  - con Meta Pixel attivo, Meta compare tra i destinatari;
+  - trattamenti del Cookie Manager nel registro dell'Hub.
+- [ ] **Accessibilità** (axe-core) delle pagine admin principali e della
+      policy pubblicata.
+
+## 7. Decisioni (prese il 2026-10-06)
+
+- [x] Requisito minimo WordPress: da **5.8** a **6.0** come il Cookie Manager
+      (header, controllo all'attivazione, README, changelog). Fatto in Fase 0,
+      così la matrice CI parte già da 6.0.
+- [x] Ordine: **Fase 0**, poi subito il **bug 1** come primo integration test
+      (test rosso → correzione → release patch **1.7.1**), poi Fasi 1 → 2 → 3.
+- [x] Retention: solo sul **log DSAR**, opzione configurabile (default
+      **5 anni**), cron che elimina le righe chiuse più vecchie. L'archivio
+      policy **non** si tocca: le versioni sono citate da `policy_version` nei
+      registri consensi di Cookie Manager e Form Builder (prova del consenso).
+      Da implementare con i suoi test dopo la Fase 2.
+
+## 8. Convenzioni
+
+- Un branch e una PR in bozza per fase; merge con `--merge --delete-branch`.
+- Ogni bug corretto ha un test che fallisce prima della correzione.
+- Changelog nel README a ogni versione; tag annotato `vX.Y.Z` solo dopo CI
+  verde su `main` (la release parte dal tag e verifica che tag, header e
+  costante `DBPH_VERSION` coincidano).
+- Riferimento: `../db-cookie-manager/TESTING.md` e
+  `../db-cookie-manager/tests/` per struttura, fixture e helper.

@@ -4,3 +4,10 @@
 composer.lock
 *.zip
 .phpcs.cache
+.phpunit.result.cache
+/playwright-report/
+/test-results/
+.wp-env-*
+
+# Sessione admin salvata dagli E2E
+tests/e2e/.auth/

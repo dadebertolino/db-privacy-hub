@@ -7,6 +7,9 @@
 	<exclude-pattern>*/vendor/*</exclude-pattern>
 	<exclude-pattern>*/node_modules/*</exclude-pattern>
 	<exclude-pattern>*/.git/*</exclude-pattern>
+	<!-- Test e fixture: non fanno parte del pacchetto distribuito e usano
+	     stub di WordPress e convenzioni PHPUnit. -->
+	<exclude-pattern>*/tests/*</exclude-pattern>
 	<!-- File condiviso verbatim tra tutti i plugin DB (stile proprio, versionato
 	     a parte): trattato come vendored. NB: non usare <rule ref="Categoria">
 	     per escluderlo — importerebbe l'intera categoria di sniff. -->
@@ -19,7 +22,7 @@
 	<arg name="parallel" value="8"/>
 
 	<!-- Compatibilità dichiarata nel plugin header. -->
-	<config name="minimum_wp_version" value="5.8"/>
+	<config name="minimum_wp_version" value="6.0"/>
 	<config name="testVersion" value="7.4-"/>
 
 	<rule ref="WordPress">

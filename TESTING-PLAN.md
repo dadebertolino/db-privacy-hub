@@ -60,16 +60,17 @@ Priorità: **A** = dati legali o crash, **B** = dati errati in admin,
 | 12 ✅ | C | `html_to_markdown()` | Le regex `<b…>`/`<i…>` catturano anche `<br>`, `<blockquote>`, `<img>`, `<iframe>`; liste annidate appiattite. | Unit con casi dedicati. |
 | 13 ✅ | C | `class-dsar-log.php` (`mask_email`) | `substr`/`strlen` a byte: email con caratteri multibyte mascherate male. | Unit. |
 | 14 ✅ | C | `uninstall.php` | Niente ciclo multisite; non rimuove il transient dell'updater. | Integration. |
-| 15 ⏸ | C | `class-updater.php` | `post_install` attiva il plugin anche se era disattivato; `zipball_url` letto senza controllo. Stesso codice condiviso con gli altri plugin DB: correggere ovunque. | Unit. |
+| 15 ✅ | C | `class-updater.php` | `post_install` attiva il plugin anche se era disattivato; `zipball_url` letto senza controllo. Stesso codice condiviso con gli altri plugin DB: correggere ovunque. | Unit. |
 | 16 ✅ | C | `class-embed-bridge.php` | Cache della scansione invalidata a ogni `save_post` (revisioni, autosalvataggi, ordini Woo); pattern `output=embed` attribuisce a Google Maps qualunque embed. Piattaforme dal filtro senza `patterns`/`blocks`/`label` → warning. | Unit + integration. |
 | 17 ✅ | C | Fusi orari | Archivio in ora MySQL, log DSAR in ora WordPress; `strtotime` presuppone fuso PHP UTC. | Unit con fuso diverso. |
-| 18 | C | `languages/` | Cartella assente ma caricata da `load_plugin_textdomain`. | — |
+| 18 ✅ | C | `languages/` | Cartella assente ma caricata da `load_plugin_textdomain`. | — |
 | 19 ✅ | C | Testo policy | La policy dice "entro un mese", il codice usa 30 giorni. Allineare il testo o il calcolo. | — |
 
 Nessuna SQL injection trovata; nonce e capability presenti su ogni handler.
 
-Legenda: ✅ corretto con test · ⏸ rinviato (15: codice condiviso da tutti i
-plugin DB, va corretto in un passaggio dedicato su tutti i repository).
+Legenda: ✅ corretto con test (`UpdaterTest` per il 15; il 18 non ha test:
+è la cartella). Bug 15: corretto qui (`DB_GitHub_Updater` 1.1.0); il file è
+condiviso da tutti i plugin DB e va copiato negli altri repository.
 Bug 7 e 8 sono corretti in Fase 2 (causa del 7: la pagina collegata mancava
 dal menu di destinazione); i test E2E che li provano arrivano in Fase 3.
 Bug 19: allineato il calcolo al testo (un mese di calendario, art. 12.3).

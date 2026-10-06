@@ -125,7 +125,9 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 ### Changelog
 
-#### Non rilasciata
+#### 1.8.0 — Suite di test, robustezza verso gli altri plugin, termini DSAR corretti _(2026-10-06)_
+
+Release cumulativa del piano di test (`TESTING-PLAN.md`): ogni correzione ha un test automatico. Schema dell'archivio policy aggiornato a 1.1 con migrazione automatica; filtri pubblici invariati. Requisito minimo: WordPress 6.0.
 
 - **Requisito minimo WordPress 6.0** (era 5.8), allineato a DB Cookie Manager: header, controllo all'attivazione e PHPCS
 - **Fix: termine DSAR dalla data di richiesta** — se alla conferma la riga del log non esisteva ancora (richieste create prima dell'attivazione del plugin o della 1.7.0), `requested_at` diventava il momento della conferma e i 30 giorni dell'art. 12.3 GDPR partivano in ritardo; in più PHP 8 emetteva un warning (`date_created_gmt` non esiste su `WP_User_Request`). Ora la data è quella di creazione della richiesta
@@ -143,6 +145,8 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 - **Export Markdown** — `<br>`, `<blockquote>`, `<img>`, `<iframe>` non vengono più trasformati in grassetto/corsivo; liste annidate indentate e liste numerate numerate
 - **Storico DSAR** — email con caratteri accentati o non latini mascherate per carattere (prima i caratteri multibyte venivano spezzati)
 - **Contenuti incorporati** — Google Maps riconosciuto solo dagli URL Maps (prima qualunque embed con `output=embed`); piattaforme aggiunte con `dbph_embed_platforms` senza tutti i campi non generano più warning; la cache della scansione non si azzera più a ogni revisione, autosalvataggio o ordine WooCommerce
+- **Aggiornamenti dal pannello** — dopo un aggiornamento il plugin viene riattivato solo se era attivo (prima veniva attivato anche se l'admin l'aveva disattivato), anche per l'attivazione di rete; release senza ZIP ignorate invece di generare un errore
+- Cartella `languages/` presente, come dichiarato dall'header (`Domain Path`)
 - **Suite di test** — unit (PHPUnit, PHP 7.4–8.4), integration (WordPress + MySQL reali, WordPress 6.0 e ultima versione, anche multisite), E2E (wp-env + Playwright) e run notturna su WordPress trunk e PHP 8.4; vedi `TESTING.md`
 
 #### 1.7.0 — Accountability DSAR, versioni policy affidabili, robustezza ecosistema _(2026)_

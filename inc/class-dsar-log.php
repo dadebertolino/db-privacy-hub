@@ -29,6 +29,10 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 	class DBPH_DSAR_Log {
 
 		const TABLE_NAME    = 'dbph_dsar_log';
+
+		/** Termine di risposta in giorni (art. 12.3 GDPR) e soglia "in scadenza". */
+		const DEADLINE_DAYS = 30;
+		const DUE_SOON_DAYS = 10;
 		const SCHEMA_VERSION = '2.0';
 		const SCHEMA_OPTION  = 'dbph_dsar_log_schema';
 
@@ -192,16 +196,24 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		}
 
 		private static function mask_email( $email ) {
-			$email = (string) $email;
-			$at    = strpos( $email, '@' );
+			$email = trim( (string) $email );
+			$at    = strrpos( $email, '@' );
 			if ( $at === false || $at < 1 ) {
 				return '***';
 			}
 			$local  = substr( $email, 0, $at );
 			$domain = substr( $email, $at + 1 );
-			$local_masked = strlen( $local ) <= 2
-				? str_repeat( '*', strlen( $local ) )
-				: substr( $local, 0, 1 ) . str_repeat( '*', max( 1, strlen( $local ) - 2 ) ) . substr( $local, -1 );
+
+			// 1.8.0: per caratteri, non per byte: con una parte locale
+			// multibyte (es. "élodie") substr() spezzava i caratteri UTF-8.
+			$chars = preg_split( '//u', $local, -1, PREG_SPLIT_NO_EMPTY );
+			if ( ! is_array( $chars ) ) {
+				$chars = str_split( $local ); // Non UTF-8 valido: ripiego a byte.
+			}
+			$len          = count( $chars );
+			$local_masked = $len <= 2
+				? str_repeat( '*', $len )
+				: $chars[0] . str_repeat( '*', $len - 2 ) . $chars[ $len - 1 ];
 			return $local_masked . '@' . $domain;
 		}
 
@@ -614,8 +626,8 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			// requested_at è in ora locale: i cutoff usano current_time('timestamp')
 			// per restare coerenti con calculate_deadline() e i badge in tabella.
 			$now_ts = current_time( 'timestamp' );
-			$soon   = gmdate( 'Y-m-d H:i:s', $now_ts + 10 * DAY_IN_SECONDS );
-			$cutoff = gmdate( 'Y-m-d H:i:s', $now_ts - 30 * DAY_IN_SECONDS );
+			$soon   = gmdate( 'Y-m-d H:i:s', $now_ts + self::DUE_SOON_DAYS * DAY_IN_SECONDS );
+			$cutoff = gmdate( 'Y-m-d H:i:s', $now_ts - self::DEADLINE_DAYS * DAY_IN_SECONDS );
 
 			$out['overdue'] = (int) $wpdb->get_var(
 				$wpdb->prepare(
@@ -630,8 +642,9 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 					"SELECT COUNT(*) FROM {$table}
 				 WHERE status IN ('pending','confirmed','received','in_progress')
 				   AND requested_at >= %s
-				   AND DATE_ADD(requested_at, INTERVAL 30 DAY) < %s",
+				   AND DATE_ADD(requested_at, INTERVAL %d DAY) < %s",
 					$cutoff,
+					self::DEADLINE_DAYS,
 					$soon
 				)
 			);
@@ -870,18 +883,35 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 				);
 			}
 
-			$deadline = strtotime( $row->requested_at . ' +30 days' );
-			$now      = current_time( 'timestamp' );
-			$days     = (int) round( ( $deadline - $now ) / DAY_IN_SECONDS );
+			// 1.8.0: stessa regola dei contatori SQL di get_stats():
+			// scaduta se requested_at + 30 giorni è nel passato, in scadenza
+			// se cade entro 10 giorni. requested_at e current_time() sono
+			// entrambi in ora locale: li confrontiamo come orari "nudi" in UTC,
+			// senza dipendere dal fuso di default di PHP.
+			try {
+				$requested = new DateTimeImmutable( (string) $row->requested_at, new DateTimeZone( 'UTC' ) );
+			} catch ( Exception $e ) {
+				return array(
+					'class' => '',
+					'label' => '',
+					'days'  => 0,
+				);
+			}
+			$deadline  = $requested->getTimestamp() + self::DEADLINE_DAYS * DAY_IN_SECONDS;
+			$remaining = $deadline - current_time( 'timestamp' );
+			// Giorni pieni residui; in ritardo, giorni iniziati dalla scadenza.
+			$days = $remaining < 0
+				? -1 * (int) ceil( -$remaining / DAY_IN_SECONDS )
+				: (int) floor( $remaining / DAY_IN_SECONDS );
 
-			if ( $days < 0 ) {
+			if ( $remaining < 0 ) {
 				return array(
 					'class' => 'overdue',
 					'label' => sprintf( /* translators: %d: giorni di ritardo */ __( 'Scaduta (+%d gg)', 'db-privacy-hub' ), abs( $days ) ),
 					'days'  => $days,
 				);
 			}
-			if ( $days <= 10 ) {
+			if ( $remaining < self::DUE_SOON_DAYS * DAY_IN_SECONDS ) {
 				return array(
 					'class' => 'due_soon',
 					'label' => sprintf( /* translators: %d: giorni alla scadenza */ _n( '%d giorno', '%d giorni', $days, 'db-privacy-hub' ), $days ),

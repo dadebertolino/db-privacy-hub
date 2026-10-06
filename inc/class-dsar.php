@@ -80,7 +80,7 @@ if ( ! class_exists( 'DBPH_DSAR' ) ) {
 				$exporters[ $slug ] = array(
 					'exporter_friendly_name' => $label,
 					'callback'               => function ( $email_address, $page = 1 ) use ( $callback, $slug ) {
-						return DBPH_DSAR::normalize_export_response( call_user_func( $callback, $email_address, $page ), $slug );
+						return DBPH_DSAR::run_exporter( $callback, $email_address, $page, $slug );
 					},
 				);
 			}
@@ -118,7 +118,7 @@ if ( ! class_exists( 'DBPH_DSAR' ) ) {
 				$erasers[ $slug ] = array(
 					'eraser_friendly_name' => $label,
 					'callback'             => function ( $email_address, $page = 1 ) use ( $callback, $slug ) {
-						return DBPH_DSAR::normalize_erase_response( call_user_func( $callback, $email_address, $page ), $slug );
+						return DBPH_DSAR::run_eraser( $callback, $email_address, $page, $slug );
 					},
 				);
 			}
@@ -162,6 +162,72 @@ if ( ! class_exists( 'DBPH_DSAR' ) ) {
 				return (string) $entry[ $core_key ];
 			}
 			return '';
+		}
+
+		/**
+		 * Esegue un exporter dichiarato via dbph_* isolandone gli errori: una
+		 * callback che lancia un'eccezione non deve interrompere la richiesta
+		 * DSAR degli altri plugin (1.8.0).
+		 *
+		 * @param callable $callback
+		 * @param string   $email_address
+		 * @param int      $page
+		 * @param string   $slug
+		 * @return array{data:array,done:bool}
+		 */
+		public static function run_exporter( $callback, $email_address, $page, $slug ) {
+			try {
+				$response = call_user_func( $callback, $email_address, $page );
+			} catch ( Throwable $e ) {
+				self::doing_it_wrong( self::exception_message( $slug, $e ) );
+				return array(
+					'data' => array(),
+					'done' => true,
+				);
+			}
+			return self::normalize_export_response( $response, $slug );
+		}
+
+		/**
+		 * Esegue un eraser dichiarato via dbph_* isolandone gli errori. Se la
+		 * callback fallisce non sappiamo se i dati sono stati cancellati: la
+		 * risposta li segna come trattenuti (la richiesta risulta parziale) e
+		 * un messaggio invita il titolare a verificare a mano (1.8.0).
+		 *
+		 * @param callable $callback
+		 * @param string   $email_address
+		 * @param int      $page
+		 * @param string   $slug
+		 * @return array{items_removed:bool,items_retained:bool,messages:array,done:bool}
+		 */
+		public static function run_eraser( $callback, $email_address, $page, $slug ) {
+			try {
+				$response = call_user_func( $callback, $email_address, $page );
+			} catch ( Throwable $e ) {
+				self::doing_it_wrong( self::exception_message( $slug, $e ) );
+				return array(
+					'items_removed'  => false,
+					'items_retained' => true,
+					'messages'       => array(
+						sprintf(
+							/* translators: %s: slug dell'eraser */
+							__( 'La cancellazione dei dati gestiti da "%s" non è stata completata per un errore del plugin: verificare e cancellare manualmente.', 'db-privacy-hub' ),
+							$slug
+						),
+					),
+					'done'           => true,
+				);
+			}
+			return self::normalize_erase_response( $response, $slug );
+		}
+
+		private static function exception_message( $slug, $e ) {
+			return sprintf(
+				/* translators: 1: slug callback, 2: messaggio dell'eccezione */
+				__( 'La callback DSAR "%1$s" registrata via DB Privacy Hub ha lanciato un\'eccezione: %2$s', 'db-privacy-hub' ),
+				$slug,
+				$e->getMessage()
+			);
 		}
 
 		/**

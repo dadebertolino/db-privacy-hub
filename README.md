@@ -129,6 +129,12 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 - **Requisito minimo WordPress 6.0** (era 5.8), allineato a DB Cookie Manager: header, controllo all'attivazione e PHPCS
 - **Fix: termine DSAR dalla data di richiesta** — se alla conferma la riga del log non esisteva ancora (richieste create prima dell'attivazione del plugin o della 1.7.0), `requested_at` diventava il momento della conferma e i 30 giorni dell'art. 12.3 GDPR partivano in ritardo; in più PHP 8 emetteva un warning (`date_created_gmt` non esiste su `WP_User_Request`). Ora la data è quella di creazione della richiesta
+- **Robustezza verso gli altri plugin** — un exporter/eraser o una fonte consensi che lancia un'eccezione non blocca più la richiesta DSAR o il registro consensi degli altri plugin (l'eraser fallito risulta "dati trattenuti", con un messaggio per la verifica manuale); filtri `dbph_policy_sections` / `dbph_policy_html` che restituiscono un tipo errato vengono ignorati invece di impedire la generazione della policy; righe consensi con campi non scalari normalizzate (niente più "Array" o errori in admin); voci non array del registro trattamenti scartate
+- **Scadenze DSAR coerenti** — badge in tabella e contatori del cruscotto usano la stessa regola (scaduta oltre 30 giorni, in scadenza sotto i 10), indipendente dal fuso orario di PHP
+- **Responsabili esterni** — i modelli aggiunti con `dbph_responsabili_templates` compaiono nel menu; una voce salvata senza id riceve un id stabile invece di uno nuovo a ogni lettura
+- **Export Markdown** — `<br>`, `<blockquote>`, `<img>`, `<iframe>` non vengono più trasformati in grassetto/corsivo; liste annidate indentate e liste numerate numerate
+- **Storico DSAR** — email con caratteri accentati o non latini mascherate per carattere (prima i caratteri multibyte venivano spezzati)
+- **Contenuti incorporati** — Google Maps riconosciuto solo dagli URL Maps (prima qualunque embed con `output=embed`); piattaforme aggiunte con `dbph_embed_platforms` senza tutti i campi non generano più warning; la cache della scansione non si azzera più a ogni revisione, autosalvataggio o ordine WooCommerce
 - **Suite di test** — unit (PHPUnit, PHP 7.4–8.4), integration (WordPress + MySQL reali, WordPress 6.0 e ultima versione), E2E (wp-env + Playwright) e run notturna su WordPress trunk e PHP 8.4; vedi `TESTING.md`
 
 #### 1.7.0 — Accountability DSAR, versioni policy affidabili, robustezza ecosistema _(2026)_

@@ -60,7 +60,7 @@ if ( ! class_exists( 'DBPH_Responsabili' ) ) {
 				}
 				$out[] = self::sanitize_entry( $entry );
 			}
-			return $out;
+			return self::unique_ids( $out );
 		}
 
 		/**
@@ -81,7 +81,32 @@ if ( ! class_exists( 'DBPH_Responsabili' ) ) {
 				}
 				$clean[] = self::sanitize_entry( $entry );
 			}
-			return (bool) update_option( self::OPTION_KEY, $clean );
+			return (bool) update_option( self::OPTION_KEY, self::unique_ids( $clean ) );
+		}
+
+		/**
+		 * Rende univoci gli id dell'elenco (due voci identiche senza id
+		 * ricevono lo stesso id derivato dal contenuto): dalla seconda
+		 * occorrenza si aggiunge un suffisso -2, -3…
+		 *
+		 * @since 1.8.0
+		 * @param array $entries Voci già sanitizzate.
+		 * @return array
+		 */
+		private static function unique_ids( array $entries ) {
+			$seen = array();
+			foreach ( $entries as $i => $entry ) {
+				$id   = $entry['id'];
+				$base = $id;
+				$n    = 1;
+				while ( isset( $seen[ $id ] ) ) {
+					++$n;
+					$id = $base . '-' . $n;
+				}
+				$seen[ $id ]         = true;
+				$entries[ $i ]['id'] = $id;
+			}
+			return $entries;
 		}
 
 		/**
@@ -91,21 +116,30 @@ if ( ! class_exists( 'DBPH_Responsabili' ) ) {
 		 * @return array
 		 */
 		public static function sanitize_entry( array $entry ) {
-			$id = isset( $entry['id'] ) ? sanitize_key( (string) $entry['id'] ) : '';
-			if ( $id === '' ) {
-				$id = sanitize_key( substr( md5( wp_json_encode( $entry ) . microtime() ), 0, 12 ) );
+			$clean = array(
+				'id'        => isset( $entry['id'] ) && is_scalar( $entry['id'] ) ? sanitize_key( (string) $entry['id'] ) : '',
+				'nome'      => self::text( $entry, 'nome' ),
+				'ruolo'     => self::text( $entry, 'ruolo' ),
+				'paese'     => self::text( $entry, 'paese' ),
+				'extra_ue'  => ! empty( $entry['extra_ue'] ),
+				'garanzie'  => self::text( $entry, 'garanzie' ),
+				'dpa_url'   => isset( $entry['dpa_url'] ) && is_string( $entry['dpa_url'] ) ? esc_url_raw( $entry['dpa_url'] ) : '',
+				'note'      => isset( $entry['note'] ) && is_scalar( $entry['note'] ) ? sanitize_textarea_field( (string) $entry['note'] ) : '',
+			);
+
+			// 1.8.0: id derivato dal contenuto, non da microtime(): una voce
+			// salvata senza id riceve lo stesso id a ogni lettura.
+			if ( $clean['id'] === '' ) {
+				$fingerprint = $clean;
+				unset( $fingerprint['id'] );
+				$clean['id'] = 'r' . substr( md5( wp_json_encode( $fingerprint ) ), 0, 11 );
 			}
 
-			return array(
-				'id'        => $id,
-				'nome'      => sanitize_text_field( $entry['nome'] ?? '' ),
-				'ruolo'     => sanitize_text_field( $entry['ruolo'] ?? '' ),
-				'paese'     => sanitize_text_field( $entry['paese'] ?? '' ),
-				'extra_ue'  => ! empty( $entry['extra_ue'] ),
-				'garanzie'  => sanitize_text_field( $entry['garanzie'] ?? '' ),
-				'dpa_url'   => esc_url_raw( $entry['dpa_url'] ?? '' ),
-				'note'      => sanitize_textarea_field( $entry['note'] ?? '' ),
-			);
+			return $clean;
+		}
+
+		private static function text( array $entry, $key ) {
+			return isset( $entry[ $key ] ) && is_scalar( $entry[ $key ] ) ? sanitize_text_field( (string) $entry[ $key ] ) : '';
 		}
 
 		/**
@@ -189,17 +223,32 @@ if ( ! class_exists( 'DBPH_Responsabili' ) ) {
 			 * @since 1.5.0
 			 * @param array $templates
 			 */
-			return (array) apply_filters( 'dbph_responsabili_templates', $templates );
+			$filtered = apply_filters( 'dbph_responsabili_templates', $templates );
+
+			// 1.8.0: solo modelli ben formati (array con nome).
+			$valid = array();
+			foreach ( is_array( $filtered ) ? $filtered : array() as $key => $template ) {
+				$key = sanitize_key( (string) $key );
+				if ( $key !== '' && is_array( $template ) && ! empty( $template['nome'] ) && is_scalar( $template['nome'] ) ) {
+					$valid[ $key ] = $template;
+				}
+			}
+			return $valid;
 		}
 
 		/**
 		 * Etichette leggibili dei modelli, per la UI.
 		 *
+		 * 1.8.0: derivate dai modelli effettivi, così compaiono anche quelli
+		 * aggiunti con il filtro dbph_responsabili_templates. Etichetta: la
+		 * chiave `label` del modello, altrimenti quella di serie, altrimenti
+		 * il ruolo, altrimenti la chiave.
+		 *
 		 * @since 1.5.0
 		 * @return array<string,string>
 		 */
 		public static function get_template_labels() {
-			return array(
+			$builtin = array(
 				'commercialista' => __( 'Commercialista / consulente fiscale', 'db-privacy-hub' ),
 				'webmaster'      => __( 'Webmaster / agenzia web', 'db-privacy-hub' ),
 				'hosting'        => __( 'Provider di hosting', 'db-privacy-hub' ),
@@ -207,6 +256,20 @@ if ( ! class_exists( 'DBPH_Responsabili' ) ) {
 				'email'          => __( 'Email transazionale', 'db-privacy-hub' ),
 				'backup'         => __( 'Backup esterno', 'db-privacy-hub' ),
 			);
+
+			$labels = array();
+			foreach ( self::get_templates() as $key => $template ) {
+				if ( ! empty( $template['label'] ) && is_scalar( $template['label'] ) ) {
+					$labels[ $key ] = (string) $template['label'];
+				} elseif ( isset( $builtin[ $key ] ) ) {
+					$labels[ $key ] = $builtin[ $key ];
+				} elseif ( ! empty( $template['ruolo'] ) && is_scalar( $template['ruolo'] ) ) {
+					$labels[ $key ] = (string) $template['ruolo'];
+				} else {
+					$labels[ $key ] = $key;
+				}
+			}
+			return $labels;
 		}
 
 		/**

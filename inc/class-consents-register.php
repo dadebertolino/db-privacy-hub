@@ -110,7 +110,14 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 			if ( ! is_callable( $cb ) ) {
 				return 0;
 			}
-			return (int) call_user_func( $cb, $args );
+			// 1.8.0: una fonte rotta non deve bloccare la vista delle altre.
+			try {
+				$count = call_user_func( $cb, $args );
+			} catch ( Throwable $e ) {
+				self::source_failed( $source_key, $e );
+				return 0;
+			}
+			return is_numeric( $count ) ? max( 0, (int) $count ) : 0;
 		}
 
 		/**
@@ -130,21 +137,64 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 				return array();
 			}
 
-			$rows = (array) call_user_func( $cb, $args );
-
-			// Iniettiamo source_key e source_label in ogni riga (la fonte non li conosce).
-			foreach ( $rows as &$row ) {
-				if ( is_array( $row ) ) {
-					$row['source_key']   = $source_key;
-					$row['source_label'] = $sources[ $source_key ]['label'];
-				} elseif ( is_object( $row ) ) {
-					$row->source_key   = $source_key;
-					$row->source_label = $sources[ $source_key ]['label'];
-				}
+			try {
+				$rows = call_user_func( $cb, $args );
+			} catch ( Throwable $e ) {
+				self::source_failed( $source_key, $e );
+				return array();
 			}
-			unset( $row );
 
-			return $rows;
+			// 1.8.0: righe normalizzate al contratto (array con campi scalari):
+			// la UI e l'export CSV non devono fare i conti con valori
+			// arbitrari (array al posto del testo, oggetti, null).
+			$out = array();
+			foreach ( (array) $rows as $row ) {
+				if ( is_object( $row ) ) {
+					$row = get_object_vars( $row );
+				}
+				if ( ! is_array( $row ) ) {
+					continue;
+				}
+				$row                 = self::normalize_row( $row );
+				$row['source_key']   = $source_key;
+				$row['source_label'] = (string) $sources[ $source_key ]['label'];
+				$out[]               = $row;
+			}
+
+			return $out;
+		}
+
+		/**
+		 * Porta una riga al contratto documentato in testa al file.
+		 *
+		 * @since 1.8.0
+		 * @param array $row
+		 * @return array
+		 */
+		public static function normalize_row( array $row ) {
+			foreach ( array( 'id', 'timestamp', 'subject', 'consent_type', 'consent_text' ) as $key ) {
+				$row[ $key ] = isset( $row[ $key ] ) && is_scalar( $row[ $key ] ) ? (string) $row[ $key ] : '';
+			}
+			$row['policy_version'] = isset( $row['policy_version'] ) && is_numeric( $row['policy_version'] ) ? (int) $row['policy_version'] : 0;
+			$row['extra']          = isset( $row['extra'] ) && is_array( $row['extra'] ) ? $row['extra'] : array();
+			return $row;
+		}
+
+		private static function source_failed( $source_key, $e ) {
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				_doing_it_wrong(
+					'DBPH_Consents_Register',
+					esc_html(
+						sprintf(
+							/* translators: 1: chiave della fonte, 2: messaggio dell'eccezione */
+							__( 'La fonte consensi "%1$s" ha lanciato un\'eccezione: %2$s', 'db-privacy-hub' ),
+							$source_key,
+							$e->getMessage()
+						)
+					),
+					'1.8.0'
+				);
+			}
 		}
 
 		/**
@@ -188,9 +238,7 @@ if ( ! class_exists( 'DBPH_Consents_Register' ) ) {
 			usort(
 				$all,
 				function ( $a, $b ) {
-					$ta = is_array( $a ) ? ( $a['timestamp'] ?? '' ) : ( $a->timestamp ?? '' );
-					$tb = is_array( $b ) ? ( $b['timestamp'] ?? '' ) : ( $b->timestamp ?? '' );
-					return strcmp( $tb, $ta );
+					return strcmp( $b['timestamp'], $a['timestamp'] );
 				}
 			);
 

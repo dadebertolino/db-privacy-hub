@@ -69,12 +69,48 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 			add_filter( 'dbph_policy_sections', array( __CLASS__, 'extend_sections' ), 25, 2 );
 
 			// Invalida la cache di scansione quando un contenuto cambia.
-			add_action( 'save_post', array( __CLASS__, 'flush_scan_cache' ) );
-			add_action( 'deleted_post', array( __CLASS__, 'flush_scan_cache' ) );
+			add_action( 'save_post', array( __CLASS__, 'maybe_flush_scan_cache' ), 10, 2 );
+			add_action( 'deleted_post', array( __CLASS__, 'maybe_flush_scan_cache' ), 10, 2 );
 		}
 
 		public static function flush_scan_cache() {
 			delete_transient( self::TRANSIENT_SCAN );
+		}
+
+		/**
+		 * Invalida la cache solo per i contenuti che la scansione legge:
+		 * niente revisioni, autosalvataggi, bozze automatiche o tipi non
+		 * pubblici (ordini WooCommerce, richieste privacy, menu…), che su un
+		 * negozio la azzeravano di continuo.
+		 *
+		 * @since 1.8.0
+		 * @param int          $post_id
+		 * @param WP_Post|null $post
+		 */
+		public static function maybe_flush_scan_cache( $post_id, $post = null ) {
+			if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+				return;
+			}
+			$post = $post ? $post : get_post( $post_id );
+			if ( ! $post || $post->post_status === 'auto-draft' ) {
+				return;
+			}
+			if ( ! in_array( $post->post_type, self::scanned_post_types(), true ) ) {
+				return;
+			}
+			self::flush_scan_cache();
+		}
+
+		/**
+		 * Tipi di contenuto letti dalla scansione.
+		 *
+		 * @since 1.8.0
+		 * @return string[]
+		 */
+		private static function scanned_post_types() {
+			$post_types = get_post_types( array( 'public' => true ) );
+			unset( $post_types['attachment'] );
+			return empty( $post_types ) ? array( 'post', 'page' ) : array_values( $post_types );
 		}
 
 		/* =====================================================================
@@ -181,9 +217,10 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 				'google_maps' => array(
 					'label'    => 'Google Maps',
 					// 1.7.0: rimosso 'maps.google.com/maps' (matchava i link
-					// "Come raggiungerci"); `output=embed` è il parametro
-					// dell'iframe Maps classico.
-					'patterns' => array( 'google.com/maps/embed', 'output=embed' ),
+					// "Come raggiungerci"). 1.8.0: `output=embed` da solo
+					// attribuiva a Maps qualunque embed con quel parametro;
+					// ora deve seguire un URL Maps (`*` = qualsiasi testo).
+					'patterns' => array( 'google.com/maps/embed', 'google.com/maps*output=embed' ),
 					'blocks'   => array(),
 					'dest'     => array(
 						'name'        => 'Google Ireland Ltd (Google Maps)',
@@ -199,7 +236,70 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 			 * @since 1.6.0
 			 * @param array $platforms
 			 */
-			return (array) apply_filters( 'dbph_embed_platforms', $platforms );
+			$filtered = apply_filters( 'dbph_embed_platforms', $platforms );
+
+			// 1.8.0: le piattaforme aggiunte dal filtro vengono portate alla
+			// forma attesa (label, patterns, blocks, dest): voci incomplete
+			// producevano warning nella scansione e nel registro.
+			$valid = array();
+			foreach ( is_array( $filtered ) ? $filtered : array() as $key => $platform ) {
+				$key = sanitize_key( (string) $key );
+				if ( $key === '' || ! is_array( $platform ) ) {
+					continue;
+				}
+				$dest = isset( $platform['dest'] ) && is_array( $platform['dest'] ) && ! empty( $platform['dest']['name'] )
+					? $platform['dest']
+					: null;
+				$valid[ $key ] = array(
+					'label'    => ! empty( $platform['label'] ) && is_scalar( $platform['label'] ) ? (string) $platform['label'] : $key,
+					'patterns' => self::string_list( $platform['patterns'] ?? array() ),
+					'blocks'   => self::string_list( $platform['blocks'] ?? array() ),
+					'dest'     => $dest,
+				);
+			}
+			return $valid;
+		}
+
+		/**
+		 * @param mixed $value
+		 * @return string[] Stringhe non vuote.
+		 */
+		private static function string_list( $value ) {
+			$out = array();
+			foreach ( (array) $value as $item ) {
+				if ( is_scalar( $item ) && trim( (string) $item ) !== '' ) {
+					$out[] = (string) $item;
+				}
+			}
+			return $out;
+		}
+
+		/**
+		 * Pattern LIKE di una piattaforma: i `patterns` (con `*` come
+		 * jolly) e il marker JSON dei blocchi embed di Gutenberg. Il testo è
+		 * protetto come fa $wpdb->esc_like().
+		 *
+		 * @since 1.8.0
+		 * @param array $platform Voce normalizzata di get_platforms().
+		 * @return string[]
+		 */
+		public static function like_patterns( array $platform ) {
+			$needles = $platform['patterns'];
+			foreach ( $platform['blocks'] as $block_slug ) {
+				// Marker del blocco Gutenberg embed: molto affidabile.
+				$needles[] = '"providerNameSlug":"' . $block_slug . '"';
+			}
+			$likes = array();
+			foreach ( $needles as $needle ) {
+				$parts = array_map(
+					function ( $part ) {
+						return addcslashes( $part, '_%\\' );
+					},
+					explode( '*', $needle )
+				);
+				$likes[] = '%' . implode( '%', $parts ) . '%';
+			}
+			return $likes;
 		}
 
 		/* =====================================================================
@@ -254,27 +354,13 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 
 			global $wpdb;
 
-			$post_types = get_post_types( array( 'public' => true ) );
-			unset( $post_types['attachment'] );
-			if ( empty( $post_types ) ) {
-				$post_types = array( 'post', 'page' );
-			}
-			$types_in = "'" . implode( "','", array_map( 'esc_sql', $post_types ) ) . "'";
+			$types_in = "'" . implode( "','", array_map( 'esc_sql', self::scanned_post_types() ) ) . "'";
 
 			$found = array();
 			foreach ( self::get_platforms() as $key => $platform ) {
-				$needles = (array) $platform['patterns'];
-				foreach ( (array) $platform['blocks'] as $block_slug ) {
-					// Marker del blocco Gutenberg embed: molto affidabile.
-					$needles[] = '"providerNameSlug":"' . $block_slug . '"';
-				}
-				if ( empty( $needles ) ) {
+				$likes = self::like_patterns( $platform );
+				if ( empty( $likes ) ) {
 					continue;
-				}
-
-				$likes = array();
-				foreach ( $needles as $needle ) {
-					$likes[] = '%' . $wpdb->esc_like( $needle ) . '%';
 				}
 
 				// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $types_in è esc_sql'd; i placeholder sono generati per numero di needle.
@@ -419,7 +505,7 @@ if ( ! class_exists( 'DBPH_Embed_Bridge' ) ) {
 
 			$platforms = self::get_platforms();
 			foreach ( self::get_active_platforms() as $key ) {
-				if ( isset( $platforms[ $key ]['dest'] ) ) {
+				if ( ! empty( $platforms[ $key ]['dest'] ) ) {
 					$destinatari[] = $platforms[ $key ]['dest'];
 				}
 			}

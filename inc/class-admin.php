@@ -877,7 +877,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
 							<input type="hidden" name="action" value="dbph_add_resp_template">
 							<?php wp_nonce_field( 'dbph_add_resp_template', '_dbph_nonce' ); ?>
-							<select name="dbph_template">
+							<label for="dbph-template" class="screen-reader-text"><?php esc_html_e( 'Modello di responsabile', 'db-privacy-hub' ); ?></label>
+							<select id="dbph-template" name="dbph_template">
 								<?php foreach ( DBPH_Responsabili::get_template_labels() as $key => $label ) : ?>
 									<option value="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></option>
 								<?php endforeach; ?>
@@ -912,16 +913,16 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 						<div class="db-ui-card" style="margin-bottom:16px">
 							<div class="db-ui-card-body">
 								<div class="db-ui-field">
-									<label><?php esc_html_e( 'Nome / Ragione sociale', 'db-privacy-hub' ); ?></label>
-									<input type="text" name="dbph_resp[<?php echo (int) $i; ?>][nome]" value="<?php echo esc_attr( $r['nome'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. Aruba S.p.A.', 'db-privacy-hub' ); ?>">
+									<label for="dbph-resp-<?php echo (int) $i; ?>-nome"><?php esc_html_e( 'Nome / Ragione sociale', 'db-privacy-hub' ); ?></label>
+									<input type="text" id="dbph-resp-<?php echo (int) $i; ?>-nome" name="dbph_resp[<?php echo (int) $i; ?>][nome]" value="<?php echo esc_attr( $r['nome'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. Aruba S.p.A.', 'db-privacy-hub' ); ?>">
 								</div>
 								<div class="db-ui-field">
-									<label><?php esc_html_e( 'Ruolo / servizio fornito', 'db-privacy-hub' ); ?></label>
-									<input type="text" name="dbph_resp[<?php echo (int) $i; ?>][ruolo]" value="<?php echo esc_attr( $r['ruolo'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. Hosting, Email transazionale, CDN…', 'db-privacy-hub' ); ?>">
+									<label for="dbph-resp-<?php echo (int) $i; ?>-ruolo"><?php esc_html_e( 'Ruolo / servizio fornito', 'db-privacy-hub' ); ?></label>
+									<input type="text" id="dbph-resp-<?php echo (int) $i; ?>-ruolo" name="dbph_resp[<?php echo (int) $i; ?>][ruolo]" value="<?php echo esc_attr( $r['ruolo'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. Hosting, Email transazionale, CDN…', 'db-privacy-hub' ); ?>">
 								</div>
 								<div class="db-ui-field">
-									<label><?php esc_html_e( 'Paese', 'db-privacy-hub' ); ?></label>
-									<input type="text" name="dbph_resp[<?php echo (int) $i; ?>][paese]" value="<?php echo esc_attr( $r['paese'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. Italia, Germania, Stati Uniti', 'db-privacy-hub' ); ?>">
+									<label for="dbph-resp-<?php echo (int) $i; ?>-paese"><?php esc_html_e( 'Paese', 'db-privacy-hub' ); ?></label>
+									<input type="text" id="dbph-resp-<?php echo (int) $i; ?>-paese" name="dbph_resp[<?php echo (int) $i; ?>][paese]" value="<?php echo esc_attr( $r['paese'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. Italia, Germania, Stati Uniti', 'db-privacy-hub' ); ?>">
 								</div>
 								<div class="db-ui-field">
 									<label>
@@ -930,16 +931,16 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 									</label>
 								</div>
 								<div class="db-ui-field">
-									<label><?php esc_html_e( 'Garanzie ex art. 46 GDPR (se extra-UE)', 'db-privacy-hub' ); ?></label>
-									<input type="text" name="dbph_resp[<?php echo (int) $i; ?>][garanzie]" value="<?php echo esc_attr( $r['garanzie'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. SCC + DPF, BCR, decisione di adeguatezza', 'db-privacy-hub' ); ?>">
+									<label for="dbph-resp-<?php echo (int) $i; ?>-garanzie"><?php esc_html_e( 'Garanzie ex art. 46 GDPR (se extra-UE)', 'db-privacy-hub' ); ?></label>
+									<input type="text" id="dbph-resp-<?php echo (int) $i; ?>-garanzie" name="dbph_resp[<?php echo (int) $i; ?>][garanzie]" value="<?php echo esc_attr( $r['garanzie'] ); ?>" class="regular-text" placeholder="<?php esc_attr_e( 'Es. SCC + DPF, BCR, decisione di adeguatezza', 'db-privacy-hub' ); ?>">
 								</div>
 								<div class="db-ui-field">
-									<label><?php esc_html_e( 'URL del DPA pubblico (opzionale)', 'db-privacy-hub' ); ?></label>
-									<input type="url" name="dbph_resp[<?php echo (int) $i; ?>][dpa_url]" value="<?php echo esc_attr( $r['dpa_url'] ); ?>" class="regular-text" placeholder="https://...">
+									<label for="dbph-resp-<?php echo (int) $i; ?>-dpa_url"><?php esc_html_e( 'URL del DPA pubblico (opzionale)', 'db-privacy-hub' ); ?></label>
+									<input type="url" id="dbph-resp-<?php echo (int) $i; ?>-dpa_url" name="dbph_resp[<?php echo (int) $i; ?>][dpa_url]" value="<?php echo esc_attr( $r['dpa_url'] ); ?>" class="regular-text" placeholder="https://...">
 								</div>
 								<div class="db-ui-field">
-									<label><?php esc_html_e( 'Note (opzionale)', 'db-privacy-hub' ); ?></label>
-									<textarea name="dbph_resp[<?php echo (int) $i; ?>][note]" rows="2" class="large-text"><?php echo esc_textarea( $r['note'] ); ?></textarea>
+									<label for="dbph-resp-<?php echo (int) $i; ?>-note"><?php esc_html_e( 'Note (opzionale)', 'db-privacy-hub' ); ?></label>
+									<textarea id="dbph-resp-<?php echo (int) $i; ?>-note" name="dbph_resp[<?php echo (int) $i; ?>][note]" rows="2" class="large-text"><?php echo esc_textarea( $r['note'] ); ?></textarea>
 								</div>
 								<input type="hidden" name="dbph_resp[<?php echo (int) $i; ?>][id]" value="<?php echo esc_attr( $r['id'] ); ?>">
 							</div>

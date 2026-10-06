@@ -621,36 +621,37 @@ add_filter(
  * Gateway WooCommerce finto (fake "woo_gateway").
  * -------------------------------------------------------------------------- */
 
-add_action(
-	'plugins_loaded',
-	function () {
-		if ( ! class_exists( 'WC_Payment_Gateway' ) || class_exists( 'DBPH_E2E_Gateway' ) ) {
-			return;
+/**
+ * Dichiara il gateway finto quando WooCommerce è caricato. Gateway online
+ * con id "stripe": il bridge Woo lo riconosce come Stripe, Inc. Abilitato
+ * senza passare dalle impostazioni.
+ */
+function dbph_e2e_define_gateway() {
+	if ( ! class_exists( 'WC_Payment_Gateway' ) || class_exists( 'DBPH_E2E_Gateway' ) ) {
+		return;
+	}
+	// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound
+	class DBPH_E2E_Gateway extends WC_Payment_Gateway {
+		public function __construct() {
+			$this->id                 = 'stripe';
+			$this->method_title       = 'Stripe (E2E)';
+			$this->method_description = 'Gateway finto per gli E2E.';
+			$this->title              = 'Carta (E2E)';
+			$this->enabled            = 'yes';
 		}
-		/**
-		 * Gateway online con id "stripe": il bridge Woo lo riconosce come
-		 * Stripe, Inc. Abilitato senza passare dalle impostazioni.
-		 */
-		class DBPH_E2E_Gateway extends WC_Payment_Gateway { // phpcs:ignore Generic.Files.OneObjectStructurePerFile.MultipleFound, Generic.Classes.OpeningBraceSameLine.ContentAfterBrace
-			public function __construct() {
-				$this->id                 = 'stripe';
-				$this->method_title       = 'Stripe (E2E)';
-				$this->method_description = 'Gateway finto per gli E2E.';
-				$this->title              = 'Carta (E2E)';
-				$this->enabled            = 'yes';
-			}
+	}
+	// phpcs:enable
+}
+add_action( 'plugins_loaded', 'dbph_e2e_define_gateway', 20 );
+
+add_filter(
+	'woocommerce_payment_gateways',
+	function ( $gateways ) {
+		if ( class_exists( 'DBPH_E2E_Gateway' ) && dbph_e2e_fake_on( 'woo_gateway' ) ) {
+			$gateways[] = 'DBPH_E2E_Gateway';
 		}
-		add_filter(
-			'woocommerce_payment_gateways',
-			function ( $gateways ) {
-				if ( dbph_e2e_fake_on( 'woo_gateway' ) ) {
-					$gateways[] = 'DBPH_E2E_Gateway';
-				}
-				return $gateways;
-			}
-		);
-	},
-	20
+		return $gateways;
+	}
 );
 
 add_filter(

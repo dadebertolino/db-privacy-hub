@@ -3,7 +3,7 @@
  * Plugin Name:       DB Privacy Hub
  * Plugin URI:        https://www.davidebertolino.it/progetti/db-privacy-hub/
  * Description:       Hub privacy unificato per l'ecosistema plugin DB. Raccoglie i trattamenti dichiarati dai plugin DB (Cookie Manager, Form Builder, SEO Manager…) e genera una Privacy Policy completa (artt. 13-14 GDPR) pronta da pubblicare come pagina WordPress. Importa automaticamente la Cookie Policy dal DB Cookie Manager se installato. Niente servizi esterni, niente tracciamento.
- * Version:           1.8.0
+ * Version:           1.8.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Davide Bertolino
@@ -34,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /* -------------------------------------------------------------------------
  * Costanti
  * ---------------------------------------------------------------------- */
-define( 'DBPH_VERSION', '1.8.0' );
+define( 'DBPH_VERSION', '1.8.1' );
 define( 'DBPH_FILE', __FILE__ );
 define( 'DBPH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DBPH_URL', plugin_dir_url( __FILE__ ) );

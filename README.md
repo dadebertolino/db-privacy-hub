@@ -125,6 +125,13 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 ### Changelog
 
+#### 1.8.1 — Accessibilità dell'admin _(2026-10-06)_
+
+Chiude il piano di test con la suite E2E (Playwright, 37 scenari: pubblicazione, impostazioni, strumenti privacy di WordPress, registro consensi, storico, WooCommerce, DB Cookie Manager, accessibilità).
+
+- **Contrasto dei colori di scadenza** — badge "Scaduta", "in scadenza" e "ok" dello storico DSAR e contatori del cruscotto con contrasto conforme WCAG 2.1 AA (prima tra 3,2:1 e 4,4:1)
+- **Etichette dei campi** — i campi dei responsabili esterni e il menu dei modelli hanno etichette collegate, lette dagli screen reader
+
 #### 1.8.0 — Suite di test, robustezza verso gli altri plugin, termini DSAR corretti _(2026-10-06)_
 
 Release cumulativa del piano di test (`TESTING-PLAN.md`): ogni correzione ha un test automatico. Schema dell'archivio policy aggiornato a 1.1 con migrazione automatica; filtri pubblici invariati. Requisito minimo: WordPress 6.0.

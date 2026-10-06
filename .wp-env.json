@@ -1,0 +1,15 @@
+{
+	"core": "WordPress/WordPress",
+	"phpVersion": "8.1",
+	"plugins": [
+		"."
+	],
+	"mappings": {
+		"wp-content/mu-plugins/dbph-e2e-fixture.php": "./tests/fixtures/dbph-e2e-fixture.php"
+	},
+	"config": {
+		"WP_DEBUG": true,
+		"WP_DEBUG_LOG": true,
+		"SCRIPT_DEBUG": true
+	}
+}

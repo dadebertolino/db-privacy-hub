@@ -1,11 +1,30 @@
 name: CI
 
+# Piramide dei test per DB Privacy Hub:
+#   lint        → sintassi (PHP 7.4 e 8.3) + standard WordPress + compatibilità 7.4
+#   unit        → logica pura (contratti tra plugin, generatore, log DSAR),
+#                 matrice PHP 7.4–8.4, senza WordPress né database
+#   integration → WordPress + MySQL reali (tabelle, WP_User_Request, cron)
+#   e2e         → wp-env + Playwright: admin, strumenti privacy di WordPress
+#
+# e2e parte solo se lint e unit passano: inutile avviare Docker se la
+# sintassi è rotta. La release (ZIP) resta in release.yml, sul tag v*.
+
 on:
   push:
     branches: [ main, master ]
   pull_request:
 
+# Annulla run precedenti sullo stesso ref (risparmia minuti Actions).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+
+  # ---------------------------------------------------------------------------
+  # LINT
+  # ---------------------------------------------------------------------------
   lint:
     name: PHP Lint (${{ matrix.php }})
     runs-on: ubuntu-latest
@@ -15,7 +34,7 @@ jobs:
         # 7.4 = minimo dichiarato nel plugin header, 8.3 = target corrente.
         php: [ '7.4', '8.3' ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
@@ -26,14 +45,14 @@ jobs:
 
       - name: Syntax check
         run: |
-          find . -name '*.php' -not -path './vendor/*' -not -path './.git/*' -print0 \
+          find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -not -path './.git/*' -print0 \
             | xargs -0 -n1 -P4 php -l
 
   phpcs:
     name: PHPCS (WordPress Coding Standards)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -42,15 +61,8 @@ jobs:
           coverage: none
           tools: composer
 
-      - name: Cache Composer packages
-        uses: actions/cache@v4
-        with:
-          path: vendor
-          key: composer-${{ runner.os }}-${{ hashFiles('composer.json') }}
-          restore-keys: composer-${{ runner.os }}-
-
       - name: Install dev dependencies
-        run: composer install --no-interaction --no-progress
+        run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Run PHPCS
         run: vendor/bin/phpcs --standard=phpcs.xml.dist --report=full --no-cache
@@ -59,4 +71,94 @@ jobs:
         run: |
           vendor/bin/phpcs --standard=PHPCompatibilityWP \
             --runtime-set testVersion 7.4- \
-            --extensions=php --ignore=vendor --report=full --no-cache .
+            --extensions=php --ignore=vendor,node_modules --report=full --no-cache .
+
+  # ---------------------------------------------------------------------------
+  # UNIT — PHPUnit sulla logica pura (nessun WordPress, nessun DB)
+  # ---------------------------------------------------------------------------
+  unit:
+    name: Unit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '7.4', '8.0', '8.1', '8.2', '8.3', '8.4' ]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+          coverage: none
+
+      - name: Install Composer (dev)
+        # composer.lock non è versionato (solo dipendenze di sviluppo): le
+        # dipendenze si risolvono per la versione PHP della matrice.
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: PHPUnit (unit)
+        run: vendor/bin/phpunit --testsuite unit --colors=always
+
+  # ---------------------------------------------------------------------------
+  # INTEGRATION — PHPUnit + WordPress test suite + MySQL reale
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration (WP ${{ matrix.wp }})
+    runs-on: ubuntu-latest
+    needs: [ lint ]
+    strategy:
+      fail-fast: false
+      matrix:
+        # 6.0 = minimo dichiarato nel plugin header, latest = versione corrente.
+        include:
+          - wp: '6.0'
+            php: '8.0'
+          - wp: latest
+            php: '8.3'
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+          extensions: mysqli
+          coverage: none
+
+      - name: Install Composer (dev)
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Installa WordPress test suite
+        # Subversion serve per scaricare la test suite da develop.svn.wordpress.org.
+        run: |
+          sudo apt-get update && sudo apt-get install -y subversion
+          bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 ${{ matrix.wp }}
+
+      - name: PHPUnit (integration)
+        env:
+          WP_TESTS_DIR: /tmp/wordpress-tests-lib
+        run: vendor/bin/phpunit -c phpunit-integration.xml.dist --colors=always
+
+  # ---------------------------------------------------------------------------
+  # E2E — wp-env + Playwright (workflow riutilizzabile, vedi e2e.yml)
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (wp-env + Playwright)
+    needs: [ lint, phpcs, unit ]
+    uses: ./.github/workflows/e2e.yml

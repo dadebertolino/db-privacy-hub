@@ -178,30 +178,38 @@ variante multisite.
 - [x] **Retention DSAR** (decisione §7): opzione `dbph_dsar_retention_years`
       (default 5, 0 = mai), cron giornaliero, solo richieste chiuse.
 
-## 6. Fase 3 — E2E (stima 30–40)
+## 6. Fase 3 — E2E (37 test, 2026-10-06)
 
-- [ ] **Titolare e pubblicazione**: salvataggio, pagina creata e impostata
-      come pagina privacy di WordPress, rigenerazione, sovrascrittura di una
-      pagina esistente con avviso, nessun duplicato (bug 7: due
-      pubblicazioni di fila dal menu predefinito), export `.md`.
-- [ ] **Impostazioni**: retention DSAR salvata e limitata a 0–20.
-- [ ] **Responsabili**: aggiunta, modelli, salvataggio.
-- [ ] **DSAR negli strumenti WordPress** (Strumenti → Esporta / Cancella dati
-      personali): la richiesta compare nello storico DSAR con stato e date
-      corretti; export CSV.
-- [ ] **DSAR manuale**: form, modifica, eliminazione, avviso singolo (bug 8).
-- [ ] **Registro consensi**: filtri, export CSV.
-- [ ] **Storico policy**: elenco versioni, vista singola, confronto.
-- [ ] **WooCommerce**: con un gateway online attivo compaiono trattamenti e
+wp-env + Playwright; WooCommerce e DB Cookie Manager (sorgente GitHub in
+`.wp-env.json`) installati ma spenti, accesi dal reset negli spec che li usano.
+
+- [x] **Titolare e pubblicazione** (`admin-publish`): pagina creata e
+      impostata come pagina privacy, ripubblicazione senza duplicati né
+      avviso (bug 7), sovrascrittura con conferma, backup mai corrente
+      (bug 4), annullamento, titolare mancante, export `.md`.
+- [x] **Impostazioni e responsabili** (`admin-settings`): titolare, retention
+      0–20, aggiunta da modello, eliminazione, modelli dal filtro (bug 9).
+- [x] **DSAR negli strumenti WordPress** (`dsar`): export evaso,
+      cancellazione parziale con motivazione, eraser che lancia (bug 3),
+      export CSV.
+- [x] **DSAR manuale** (`dsar`): registrazione, modifica, eliminazione con
+      un solo avviso (bug 8); cruscotto aperte/scadute/in scadenza.
+- [x] **Registro consensi** (`consents-history`): filtri, CSV, fonti rotte e
+      righe malformate (bug 3, 11).
+- [x] **Storico policy** (`consents-history`): elenco, vista, diff, modifica
+      manuale della pagina.
+- [x] **WooCommerce** (`ecosystem`): trattamenti e gateway online come
       destinatario.
-- [ ] **Ecosistema con DB Cookie Manager** (entrambi montati in wp-env):
-  - sezioni cookie importate nella policy;
-  - un consenso dal banner del Cookie Manager registra
-    `policy_version` = versione corrente dell'Hub;
-  - con Meta Pixel attivo, Meta compare tra i destinatari;
-  - trattamenti del Cookie Manager nel registro dell'Hub.
-- [ ] **Accessibilità** (axe-core) delle pagine admin principali e della
-      policy pubblicata.
+- [x] **Ecosistema con DB Cookie Manager** (`ecosystem`): sezione cookie e
+      numerazione, trattamenti nel registro, Meta Pixel tra i destinatari,
+      consenso dal banner con `policy_version` = versione corrente dell'Hub,
+      visibile nel registro consensi.
+- [x] **Accessibilità** (`a11y`): axe-core WCAG 2.1 AA su tutte le pagine
+      admin dell'Hub e sulla policy pubblicata.
+
+Correzioni emerse dagli E2E (release 1.8.1): contrasto insufficiente dei
+badge di scadenza DSAR e del cruscotto; etichette dei campi dei responsabili
+e del menu dei modelli non collegate ai controlli.
 
 ## 7. Decisioni (prese il 2026-10-06)
 

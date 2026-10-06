@@ -57,10 +57,105 @@ async function getState( request ) {
 	return res.json();
 }
 
+/**
+ * Notice di esito delle azioni admin (admin_notices dell'Hub).
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string|RegExp} text
+ */
+function notice( page, text ) {
+	return page.locator( '#wpbody-content .updated, #wpbody-content .error, #wpbody-content .notice' ).filter( { hasText: text } );
+}
+
+/**
+ * Pubblica la policy dalla pagina del generatore con la destinazione
+ * indicata (default: quella preselezionata). Accetta l'eventuale conferma
+ * di sovrascrittura.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string} [target] Valore dell'opzione: 'new' o ID pagina.
+ */
+async function publishPolicy( page, target ) {
+	await page.goto( ADMIN_PAGES.generator );
+	if ( target !== undefined ) {
+		await page.locator( '#dbph_target_page' ).selectOption( String( target ) );
+	}
+	page.once( 'dialog', ( dialog ) => dialog.accept() );
+	await Promise.all( [
+		page.waitForURL( /dbph_msg=/ ),
+		page.locator( '#dbph-publish-btn' ).click(),
+	] );
+}
+
+/**
+ * Scarica un file da un link admin (export CSV) con la sessione della
+ * pagina e ne restituisce risposta e testo.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {import('@playwright/test').Locator} link
+ */
+async function fetchLink( page, link ) {
+	const href = await link.getAttribute( 'href' );
+	const res = await page.request.get( href );
+	return { res, body: await res.text() };
+}
+
+/**
+ * Righe di un CSV generato da fputcsv (virgola, campi tra virgolette, a
+ * capo ammessi dentro i campi). Il BOM iniziale viene ignorato.
+ *
+ * @param {string} body
+ * @returns {string[][]}
+ */
+function parseCsv( body ) {
+	const text = body.replace( /^\uFEFF/, '' );
+	const rows = [];
+	let row = [];
+	let cur = '';
+	let quoted = false;
+	for ( let i = 0; i < text.length; i++ ) {
+		const ch = text[ i ];
+		if ( quoted ) {
+			if ( ch === '"' && text[ i + 1 ] === '"' ) {
+				cur += '"';
+				i++;
+			} else if ( ch === '"' ) {
+				quoted = false;
+			} else {
+				cur += ch;
+			}
+		} else if ( ch === '"' ) {
+			quoted = true;
+		} else if ( ch === ',' ) {
+			row.push( cur );
+			cur = '';
+		} else if ( ch === '\n' || ch === '\r' ) {
+			if ( ch === '\r' && text[ i + 1 ] === '\n' ) {
+				i++;
+			}
+			row.push( cur );
+			rows.push( row );
+			row = [];
+			cur = '';
+		} else {
+			cur += ch;
+		}
+	}
+	if ( cur !== '' || row.length ) {
+		row.push( cur );
+		rows.push( row );
+	}
+	return rows;
+}
+
 module.exports = {
 	BASE_URL,
 	ADMIN_STATE,
 	ADMIN_PAGES,
 	resetState,
 	getState,
+	notice,
+	publishPolicy,
+	fetchLink,
+	parseCsv,
 };

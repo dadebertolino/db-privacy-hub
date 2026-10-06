@@ -46,7 +46,7 @@ Priorità: **A** = dati legali o crash, **B** = dati errati in admin,
 
 | # | Pri. | Dove | Problema | Test che lo prova |
 |---|---|---|---|---|
-| 1 | A | `class-dsar-log.php:370` | Legge `$request->date_created_gmt`, che su `WP_User_Request` non esiste (è `created_timestamp`). Warning PHP 8 a ogni conferma; `requested_at` diventa "adesso" → il termine GDPR di 30 giorni parte dalla conferma, non dalla richiesta. | Integration: richiesta creata 5 giorni fa, confermata oggi → `requested_at` = data di creazione. |
+| 1 ✅ | A | `class-dsar-log.php:370` | Legge `$request->date_created_gmt`, che su `WP_User_Request` non esiste (è `created_timestamp`). Warning PHP 8 a ogni conferma; `requested_at` diventa "adesso" → il termine GDPR di 30 giorni parte dalla conferma, non dalla richiesta. | Integration: richiesta creata 5 giorni fa, confermata oggi → `requested_at` = data di creazione. |
 | 2 | A | `class-policy-generator.php:63` | Un filtro `dbph_policy_sections` che restituisce un non-array → fatal in `array_map`; `dbph_policy_html` non è controllato. Un plugin terzo blocca la generazione. | Unit: filtro che restituisce `null`/stringa → policy generata comunque. |
 | 3 | A | `class-dsar.php`, `class-consents-register.php` | Le eccezioni dei callback DSAR/consensi di altri plugin non sono intercettate: un plugin rotto blocca la richiesta degli altri (contro quanto promette il README). | Unit/integration: un exporter che lancia eccezione, gli altri rispondono. |
 | 4 | A | `class-admin.php:800` (`do_overwrite_page`) | Il backup pre-sovrascrittura viene salvato come versione e diventa per un momento `dbph_policy_current_version`: un consenso registrato in quell'istante punta a un testo sbagliato. | Integration: dopo la sovrascrittura, la versione corrente è quella pubblicata e il backup è marcato come tale. |
@@ -107,7 +107,7 @@ nomi:
       `TESTING*.md`; controllo che lo ZIP non contenga file di sviluppo.
 - [x] `TESTING.md` con struttura e comandi.
 - [x] Requisito WordPress 6.0 (decisione §7): header, controllo
-      all'attivazione, `phpcs.xml.dist`, README, changelog 1.7.1.
+      all'attivazione, `phpcs.xml.dist`, README, changelog (voce "Non rilasciata").
 
 ## 4. Fase 1 — Unit test (stima 80–100)
 
@@ -185,7 +185,14 @@ WordPress + MySQL reali (`WP_UnitTestCase`).
       (header, controllo all'attivazione, README, changelog). Fatto in Fase 0,
       così la matrice CI parte già da 6.0.
 - [x] Ordine: **Fase 0**, poi subito il **bug 1** come primo integration test
-      (test rosso → correzione → release patch **1.7.1**), poi Fasi 1 → 2 → 3.
+      (test rosso → correzione), poi Fasi 1 → 2 → 3.
+- [x] Meno tag (2026-10-06): niente release per singola correzione o per
+      fase. Le correzioni si accumulano su `main` (changelog "Non
+      rilasciata") e si tagga solo per release cumulative: **1.8.0** quando
+      sono chiuse le Fasi 1–2 (bug A e B corretti, retention DSAR), poi al
+      massimo una release a fine Fase 3 se l'E2E porta altre correzioni. Un
+      tag fuori programma solo per un problema che tocca dati legali in
+      produzione.
 - [x] Retention: solo sul **log DSAR**, opzione configurabile (default
       **5 anni**), cron che elimina le righe chiuse più vecchie. L'archivio
       policy **non** si tocca: le versioni sono citate da `policy_version` nei
@@ -196,8 +203,9 @@ WordPress + MySQL reali (`WP_UnitTestCase`).
 
 - Un branch e una PR in bozza per fase; merge con `--merge --delete-branch`.
 - Ogni bug corretto ha un test che fallisce prima della correzione.
-- Changelog nel README a ogni versione; tag annotato `vX.Y.Z` solo dopo CI
-  verde su `main` (la release parte dal tag e verifica che tag, header e
+- Changelog nel README alla voce "Non rilasciata" a ogni PR; il numero di
+  versione si decide al tag. Tag annotato `vX.Y.Z` solo per le release
+  cumulative (§7) e dopo CI verde su `main` (la release parte dal tag e verifica che tag, header e
   costante `DBPH_VERSION` coincidano).
 - Riferimento: `../db-cookie-manager/TESTING.md` e
   `../db-cookie-manager/tests/` per struttura, fixture e helper.

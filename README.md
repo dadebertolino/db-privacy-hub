@@ -125,9 +125,10 @@ Sviluppato da [Davide Bertolino](https://www.davidebertolino.it). Parte dell'eco
 
 ### Changelog
 
-#### 1.7.1 — _(in preparazione)_
+#### Non rilasciata
 
 - **Requisito minimo WordPress 6.0** (era 5.8), allineato a DB Cookie Manager: header, controllo all'attivazione e PHPCS
+- **Fix: termine DSAR dalla data di richiesta** — se alla conferma la riga del log non esisteva ancora (richieste create prima dell'attivazione del plugin o della 1.7.0), `requested_at` diventava il momento della conferma e i 30 giorni dell'art. 12.3 GDPR partivano in ritardo; in più PHP 8 emetteva un warning (`date_created_gmt` non esiste su `WP_User_Request`). Ora la data è quella di creazione della richiesta
 - **Suite di test** — unit (PHPUnit, PHP 7.4–8.4), integration (WordPress + MySQL reali, WordPress 6.0 e ultima versione), E2E (wp-env + Playwright) e run notturna su WordPress trunk e PHP 8.4; vedi `TESTING.md`
 
 #### 1.7.0 — Accountability DSAR, versioni policy affidabili, robustezza ecosistema _(2026)_

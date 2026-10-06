@@ -355,11 +355,9 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
 
-			$type  = self::normalize_type( (string) $request->action_name );
-			$email = (string) $request->email;
-
-			// upsert: se la richiesta è già nel log (creata da on_request_email_sent
-			// o da una conferma precedente), aggiorna il timestamp di conferma.
+			// upsert: se la richiesta è già nel log (creata alla creazione del
+			// CPT, da on_request_email_sent o da una conferma precedente),
+			// aggiorna il timestamp di conferma.
 			$existing_id = (int) $wpdb->get_var(
 				$wpdb->prepare(
 					"SELECT id FROM {$table} WHERE request_id = %d LIMIT 1",
@@ -367,38 +365,25 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 				)
 			);
 
-			$now = current_time( 'mysql' );
-			$requested_at = $request->date_created_gmt
-				? get_date_from_gmt( $request->date_created_gmt )
-				: $now;
-
-			if ( $existing_id ) {
-				$wpdb->update(
-					$table,
-					array(
-						'status'       => 'confirmed',
-						'confirmed_at' => $now,
-					),
-					array( 'id' => $existing_id ),
-					array( '%s', '%s' ),
-					array( '%d' )
-				);
-			} else {
-				$wpdb->insert(
-					$table,
-					array(
-						'request_id'    => (int) $request_id,
-						'source'        => self::SOURCE_WP_NATIVE,
-						'email_hash'    => self::hash_email( $email ),
-						'email_display' => self::mask_email( $email ),
-						'request_type'  => $type,
-						'status'        => 'confirmed',
-						'requested_at'  => $requested_at,
-						'confirmed_at'  => $now,
-					),
-					array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
-				);
+			if ( ! $existing_id ) {
+				// Richiesta nata prima dell'attivazione del plugin (o della
+				// 1.7.0): ensure_row() prende requested_at dalla creazione della
+				// WP_User_Request, così il termine di 30 giorni decorre dal
+				// ricevimento e non dalla conferma.
+				self::ensure_row( $request, 'confirmed' );
+				return;
 			}
+
+			$wpdb->update(
+				$table,
+				array(
+					'status'       => 'confirmed',
+					'confirmed_at' => current_time( 'mysql' ),
+				),
+				array( 'id' => $existing_id ),
+				array( '%s', '%s' ),
+				array( '%d' )
+			);
 		}
 
 		/* =====================================================================

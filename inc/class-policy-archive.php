@@ -22,7 +22,11 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 	class DBPH_Policy_Archive {
 
 		const TABLE_NAME    = 'dbph_policy_archive';
-		const SCHEMA_VERSION = '1.0';
+		const SCHEMA_VERSION = '1.1';
+
+		/** Tipi di snapshot (colonna `kind`, 1.8.0). */
+		const KIND_VERSION = 'version'; // testo pubblicato: può essere la versione corrente
+		const KIND_BACKUP  = 'backup';  // contenuto sovrascritto: solo archivio
 		const SCHEMA_OPTION  = 'dbph_policy_archive_schema';
 
 		/** @var bool True mentre l'Hub stesso pubblica la pagina (sospende l'hook su post_updated). */
@@ -112,7 +116,8 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 		public static function get_latest() {
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
-			return $wpdb->get_row( "SELECT * FROM {$table} ORDER BY id DESC LIMIT 1" );
+			// 1.8.0: solo le versioni pubblicate, non i backup.
+			return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE kind = %s ORDER BY id DESC LIMIT 1", self::KIND_VERSION ) );
 		}
 
 		public static function maybe_upgrade_schema() {
@@ -120,8 +125,32 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			if ( $installed === self::SCHEMA_VERSION ) {
 				return;
 			}
+			// dbDelta è additivo: aggiunge la colonna `kind` (default 'version').
 			self::create_table();
+			if ( $installed === '1.0' ) {
+				self::migrate_v1_0_to_v1_1();
+			}
 			update_option( self::SCHEMA_OPTION, self::SCHEMA_VERSION );
+		}
+
+		/**
+		 * Migrazione 1.0 → 1.1: i backup pre-sovrascrittura salvati fino alla
+		 * 1.7.0 erano righe normali; li riconosciamo dalla nota che l'Hub
+		 * scriveva (testo sorgente, il plugin non ha traduzioni) e li marchiamo
+		 * come backup, così non tornano mai versione corrente.
+		 *
+		 * @since 1.8.0
+		 */
+		private static function migrate_v1_0_to_v1_1() {
+			global $wpdb;
+			$table = $wpdb->prefix . self::TABLE_NAME;
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$table} SET kind = %s WHERE note LIKE %s",
+					self::KIND_BACKUP,
+					$wpdb->esc_like( 'Backup pre-sovrascrittura' ) . '%'
+				)
+			);
 		}
 
 		public static function create_table() {
@@ -138,9 +167,11 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 				content LONGTEXT NOT NULL,
 				bytes INT UNSIGNED NOT NULL DEFAULT 0,
 				note VARCHAR(255) NOT NULL DEFAULT '',
+				kind VARCHAR(10) NOT NULL DEFAULT 'version',
 				PRIMARY KEY (id),
 				KEY content_hash (content_hash),
-				KEY created_at (created_at)
+				KEY created_at (created_at),
+				KEY kind (kind)
 			) {$charset};";
 
 			dbDelta( $sql );
@@ -158,9 +189,6 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			$content = (string) $content;
 			$hash    = hash( 'sha256', $content );
 
-			global $wpdb;
-			$table = $wpdb->prefix . self::TABLE_NAME;
-
 			// content_hash resta lo SHA-256 del contenuto esatto (verificabile),
 			// ma il confronto con l'ultimo snapshot ignora le date di generazione
 			// (1.7.0): rigenerare in un giorno diverso non crea una nuova versione.
@@ -169,21 +197,10 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 				return false; // contenuto equivalente all'ultimo snapshot, skip.
 			}
 
-			$ok = $wpdb->insert(
-				$table,
-				array(
-					'content_hash' => $hash,
-					'content'      => $content,
-					'bytes'        => strlen( $content ),
-					'note'         => sanitize_text_field( $note ),
-				),
-				array( '%s', '%s', '%d', '%s' )
-			);
-			if ( ! $ok ) {
+			$new_id = self::insert( $content, $note, self::KIND_VERSION );
+			if ( ! $new_id ) {
 				return false;
 			}
-
-			$new_id = (int) $wpdb->insert_id;
 
 			// 1.3.0: tieni allineata l'option `dbph_policy_current_version` per
 			// la lettura veloce da plugin terzi (Cookie Manager, Form Builder)
@@ -192,6 +209,57 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			update_option( 'dbph_policy_current_version', $new_id );
 
 			return $new_id;
+		}
+
+		/**
+		 * Archivia il contenuto di una pagina prima che l'Hub lo sovrascriva.
+		 *
+		 * 1.8.0: il backup non è una versione della policy (non è il testo
+		 * generato dall'Hub e non è più pubblicato dopo la sovrascrittura):
+		 * non diventa mai la versione corrente, quindi un consenso raccolto
+		 * durante la pubblicazione non può puntare al testo sostituito.
+		 *
+		 * @since 1.8.0
+		 * @param string $content
+		 * @param string $note
+		 * @return int|false ID del backup, false se il contenuto è già archiviato.
+		 */
+		public static function save_backup( $content, $note = '' ) {
+			$content = (string) $content;
+			global $wpdb;
+			$table  = $wpdb->prefix . self::TABLE_NAME;
+			$exists = (int) $wpdb->get_var(
+				$wpdb->prepare( "SELECT id FROM {$table} WHERE content_hash = %s LIMIT 1", hash( 'sha256', $content ) )
+			);
+			if ( $exists ) {
+				return false; // Già nell'archivio (come versione o backup).
+			}
+			return self::insert( $content, $note, self::KIND_BACKUP );
+		}
+
+		/**
+		 * @param string $content
+		 * @param string $note
+		 * @param string $kind
+		 * @return int|false
+		 */
+		private static function insert( $content, $note, $kind ) {
+			global $wpdb;
+			$ok = $wpdb->insert(
+				$wpdb->prefix . self::TABLE_NAME,
+				array(
+					// 1.8.0: ora locale del sito, come il log DSAR (prima il
+					// default CURRENT_TIMESTAMP usava il fuso del server MySQL).
+					'created_at'   => current_time( 'mysql' ),
+					'content_hash' => hash( 'sha256', $content ),
+					'content'      => $content,
+					'bytes'        => strlen( $content ),
+					'note'         => sanitize_text_field( $note ),
+					'kind'         => $kind,
+				),
+				array( '%s', '%s', '%s', '%d', '%s', '%s' )
+			);
+			return $ok ? (int) $wpdb->insert_id : false;
 		}
 
 		/**
@@ -215,7 +283,7 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			// pre-1.3.0 con snapshot già esistenti), interroga la tabella.
 			global $wpdb;
 			$table = $wpdb->prefix . self::TABLE_NAME;
-			$id = (int) $wpdb->get_var( "SELECT id FROM {$table} ORDER BY id DESC LIMIT 1" );
+			$id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE kind = %s ORDER BY id DESC LIMIT 1", self::KIND_VERSION ) );
 			if ( $id > 0 ) {
 				update_option( 'dbph_policy_current_version', $id );
 			}
@@ -234,7 +302,7 @@ if ( ! class_exists( 'DBPH_Policy_Archive' ) ) {
 			$limit = max( 1, min( 100, (int) $limit ) );
 			return (array) $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT id, created_at, content_hash, bytes, note FROM {$table} ORDER BY id DESC LIMIT %d",
+					"SELECT id, created_at, content_hash, bytes, note, kind FROM {$table} ORDER BY id DESC LIMIT %d",
 					$limit
 				)
 			);

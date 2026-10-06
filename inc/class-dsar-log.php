@@ -30,9 +30,18 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 
 		const TABLE_NAME    = 'dbph_dsar_log';
 
-		/** Termine di risposta in giorni (art. 12.3 GDPR) e soglia "in scadenza". */
-		const DEADLINE_DAYS = 30;
+		/** Conservazione dello storico (1.8.0): anni, 0 = per sempre. */
+		const RETENTION_OPTION        = 'dbph_dsar_retention_years';
+		const RETENTION_DEFAULT_YEARS = 5;
+		const RETENTION_MAX_YEARS     = 20;
+
+		/** Soglia "in scadenza", in giorni. Il termine è un mese (art. 12.3 GDPR). */
 		const DUE_SOON_DAYS = 10;
+
+		/** Stati di una richiesta ancora da evadere (contano per le scadenze). */
+		const OPEN_STATES = array( 'pending', 'confirmed', 'received', 'in_progress' );
+		/** Stati di una richiesta evasa (anche in parte). */
+		const DONE_STATES = array( 'completed', 'partial' );
 		const SCHEMA_VERSION = '2.0';
 		const SCHEMA_OPTION  = 'dbph_dsar_log_schema';
 
@@ -94,6 +103,8 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 
 			// Cron giornaliero: marca come 'expired' le richieste pending da > 7 giorni.
 			add_action( 'dbph_dsar_cleanup_pending', array( __CLASS__, 'cron_expire_pending' ) );
+			// 1.8.0: stesso evento giornaliero, conservazione limitata.
+			add_action( 'dbph_dsar_cleanup_pending', array( __CLASS__, 'purge_expired_rows' ) );
 			if ( ! wp_next_scheduled( 'dbph_dsar_cleanup_pending' ) ) {
 				wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'dbph_dsar_cleanup_pending' );
 			}
@@ -333,6 +344,63 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		 * Dopo 7 giorni le marchiamo 'expired' per visualizzazione corretta
 		 * nello storico (badge grigio).
 		 * ================================================================== */
+
+		/* =====================================================================
+		 * Conservazione limitata (1.8.0)
+		 *
+		 * Lo storico DSAR è documentazione di accountability (art. 5.2 GDPR),
+		 * ma contiene comunque dati personali (email mascherata + hash): va
+		 * conservato per un periodo definito (art. 5.1.e). Le richieste
+		 * aperte non vengono mai eliminate.
+		 * ================================================================== */
+
+		/**
+		 * @return int Anni di conservazione, 0 = per sempre.
+		 */
+		public static function get_retention_years() {
+			return self::sanitize_retention_years( get_option( self::RETENTION_OPTION, self::RETENTION_DEFAULT_YEARS ) );
+		}
+
+		/**
+		 * @param mixed $value
+		 * @return int Intero tra 0 e RETENTION_MAX_YEARS; valori non numerici → default.
+		 */
+		public static function sanitize_retention_years( $value ) {
+			if ( ! is_numeric( $value ) ) {
+				return self::RETENTION_DEFAULT_YEARS;
+			}
+			return max( 0, min( self::RETENTION_MAX_YEARS, (int) $value ) );
+		}
+
+		/**
+		 * Elimina le richieste chiuse la cui ultima data (completamento, o
+		 * richiesta se manca) è più vecchia del periodo di conservazione.
+		 *
+		 * @param int|null $now Timestamp locale (current_time) per i test. Il
+		 *                      cron chiama la funzione senza argomenti (do_action
+		 *                      passa una stringa vuota): vale solo un intero.
+		 * @return int Righe eliminate.
+		 */
+		public static function purge_expired_rows( $now = null ) {
+			$years = self::get_retention_years();
+			if ( $years < 1 ) {
+				return 0;
+			}
+			global $wpdb;
+			$table  = $wpdb->prefix . self::TABLE_NAME;
+			$now    = is_int( $now ) ? $now : current_time( 'timestamp' );
+			$cutoff = ( new DateTimeImmutable( '@' . $now ) )->modify( '-' . $years . ' years' )->format( 'Y-m-d H:i:s' );
+			$open   = "'" . implode( "','", self::OPEN_STATES ) . "'";
+
+			return (int) $wpdb->query(
+				$wpdb->prepare(
+					"DELETE FROM {$table}
+				 WHERE status NOT IN ({$open})
+				   AND COALESCE(completed_at, requested_at, created_at) < %s",
+					$cutoff
+				)
+			);
+		}
 
 		public static function cron_expire_pending() {
 			global $wpdb;
@@ -612,39 +680,53 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 				'due_soon'        => 0,
 				'manual'          => 0,
 			);
+			// 1.8.0: 'partial' è una richiesta evasa, 'expired' e 'rejected'
+			// sono chiuse senza essere evase: nessuna delle due è pendente.
+			// open/done/closed contano tutti i tipi, anche artt. 16–22.
+			$out['open']   = 0;
+			$out['done']   = 0;
+			$out['closed'] = 0;
 			foreach ( (array) $rows as $r ) {
 				$n = (int) $r['n'];
 				$out['total'] += $n;
-				if ( $r['request_type'] === self::TYPE_EXPORT ) {
-					$out[ $r['status'] === 'completed' ? 'export_done' : 'export_pending' ] += $n;
-				} elseif ( $r['request_type'] === self::TYPE_ERASE ) {
-					$out[ $r['status'] === 'completed' ? 'erase_done' : 'erase_pending' ] += $n;
+				if ( in_array( $r['status'], self::OPEN_STATES, true ) ) {
+					$state = 'pending';
+					$out['open'] += $n;
+				} elseif ( in_array( $r['status'], self::DONE_STATES, true ) ) {
+					$state = 'done';
+					$out['done'] += $n;
+				} else {
+					$state = '';
+					$out['closed'] += $n;
+				}
+				if ( $state !== '' && in_array( $r['request_type'], array( self::TYPE_EXPORT, self::TYPE_ERASE ), true ) ) {
+					$out[ $r['request_type'] . '_' . $state ] += $n;
 				}
 			}
 
-			// Conteggi separati per scadenza GDPR e fonte manuale.
-			// requested_at è in ora locale: i cutoff usano current_time('timestamp')
-			// per restare coerenti con calculate_deadline() e i badge in tabella.
+			// Scadenze: stessa regola di calculate_deadline() (termine =
+			// requested_at + 1 mese di calendario, come DATE_ADD di MySQL).
+			// requested_at è in ora locale, quindi anche "adesso".
 			$now_ts = current_time( 'timestamp' );
+			$now    = gmdate( 'Y-m-d H:i:s', $now_ts );
 			$soon   = gmdate( 'Y-m-d H:i:s', $now_ts + self::DUE_SOON_DAYS * DAY_IN_SECONDS );
-			$cutoff = gmdate( 'Y-m-d H:i:s', $now_ts - self::DEADLINE_DAYS * DAY_IN_SECONDS );
+			$open   = "'" . implode( "','", self::OPEN_STATES ) . "'";
 
 			$out['overdue'] = (int) $wpdb->get_var(
 				$wpdb->prepare(
 					"SELECT COUNT(*) FROM {$table}
-				 WHERE status IN ('pending','confirmed','received','in_progress')
-				   AND requested_at < %s",
-					$cutoff
+				 WHERE status IN ({$open})
+				   AND DATE_ADD(requested_at, INTERVAL 1 MONTH) < %s",
+					$now
 				)
 			);
 			$out['due_soon'] = (int) $wpdb->get_var(
 				$wpdb->prepare(
 					"SELECT COUNT(*) FROM {$table}
-				 WHERE status IN ('pending','confirmed','received','in_progress')
-				   AND requested_at >= %s
-				   AND DATE_ADD(requested_at, INTERVAL %d DAY) < %s",
-					$cutoff,
-					self::DEADLINE_DAYS,
+				 WHERE status IN ({$open})
+				   AND DATE_ADD(requested_at, INTERVAL 1 MONTH) >= %s
+				   AND DATE_ADD(requested_at, INTERVAL 1 MONTH) < %s",
+					$now,
 					$soon
 				)
 			);
@@ -859,46 +941,61 @@ if ( ! class_exists( 'DBPH_DSAR_Log' ) ) {
 		}
 
 		/**
+		 * Termine di risposta: un mese dalla richiesta (art. 12.3 GDPR). Se
+		 * nel mese successivo il giorno non esiste, il termine è l'ultimo
+		 * giorno del mese (31 gennaio → 28/29 febbraio), come DATE_ADD(…,
+		 * INTERVAL 1 MONTH) di MySQL usato da get_stats().
+		 *
+		 * @since 1.8.0
+		 * @param DateTimeImmutable $requested In UTC "nudo" (ora locale del sito).
+		 * @return DateTimeImmutable
+		 */
+		public static function deadline_for( DateTimeImmutable $requested ) {
+			$year  = (int) $requested->format( 'Y' );
+			$month = (int) $requested->format( 'n' ) + 1;
+			if ( $month > 12 ) {
+				$month = 1;
+				++$year;
+			}
+			$first = $requested->setDate( $year, $month, 1 );
+			$day   = min( (int) $requested->format( 'j' ), (int) $first->format( 't' ) );
+			return $requested->setDate( $year, $month, $day );
+		}
+
+		/**
 		 * Calcola lo stato di scadenza GDPR di una riga (solo per status aperti).
 		 *
+		 * 1.8.0: termine di un mese di calendario (prima 30 giorni, che a
+		 * febbraio superano il mese) e stessa regola dei contatori di
+		 * get_stats(): scaduta se il termine è passato, in scadenza se cade
+		 * entro 10 giorni. requested_at e current_time() sono in ora locale:
+		 * si confrontano come orari "nudi" in UTC, senza dipendere dal fuso
+		 * di default di PHP.
+		 *
+		 * @param object   $row
+		 * @param int|null $now Timestamp locale (current_time) per i test.
 		 * @return array{class:string,label:string,days:int} dove:
 		 *   - class: 'overdue' | 'due_soon' | 'ok' | '' (vuoto = non applicabile)
 		 *   - label: testo breve da mostrare in tabella
-		 *   - days:  giorni residui (negativi se scaduta)
+		 *   - days:  giorni pieni residui (negativi se scaduta)
 		 */
-		public static function calculate_deadline( $row ) {
-			if ( ! $row || empty( $row->requested_at ) ) {
-				return array(
-					'class' => '',
-					'label' => '',
-					'days' => 0,
-				);
+		public static function calculate_deadline( $row, $now = null ) {
+			$none = array(
+				'class' => '',
+				'label' => '',
+				'days'  => 0,
+			);
+			if ( ! $row || empty( $row->requested_at ) || ! in_array( $row->status, self::OPEN_STATES, true ) ) {
+				return $none;
 			}
-			$open_states = array( 'pending', 'confirmed', 'received', 'in_progress' );
-			if ( ! in_array( $row->status, $open_states, true ) ) {
-				return array(
-					'class' => '',
-					'label' => '',
-					'days' => 0,
-				);
-			}
-
-			// 1.8.0: stessa regola dei contatori SQL di get_stats():
-			// scaduta se requested_at + 30 giorni è nel passato, in scadenza
-			// se cade entro 10 giorni. requested_at e current_time() sono
-			// entrambi in ora locale: li confrontiamo come orari "nudi" in UTC,
-			// senza dipendere dal fuso di default di PHP.
 			try {
 				$requested = new DateTimeImmutable( (string) $row->requested_at, new DateTimeZone( 'UTC' ) );
 			} catch ( Exception $e ) {
-				return array(
-					'class' => '',
-					'label' => '',
-					'days'  => 0,
-				);
+				return $none;
 			}
-			$deadline  = $requested->getTimestamp() + self::DEADLINE_DAYS * DAY_IN_SECONDS;
-			$remaining = $deadline - current_time( 'timestamp' );
+
+			$deadline  = self::deadline_for( $requested )->getTimestamp();
+			$remaining = $deadline - ( null === $now ? current_time( 'timestamp' ) : (int) $now );
 			// Giorni pieni residui; in ritardo, giorni iniziati dalla scadenza.
 			$days = $remaining < 0
 				? -1 * (int) ceil( -$remaining / DAY_IN_SECONDS )

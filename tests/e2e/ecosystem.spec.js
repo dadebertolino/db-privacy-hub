@@ -16,9 +16,14 @@ test.describe( 'WooCommerce', () => {
 		const state = await resetState( request, { woocommerce: true, fakes: [ 'woo_gateway' ] } );
 		expect( state.woocommerce ).toBe( true );
 
+		// La prima richiesta dopo l'attivazione completa l'installazione di
+		// WooCommerce: i gateway sono disponibili da quella successiva.
 		await page.goto( ADMIN_PAGES.register );
+		await expect( async () => {
+			await page.reload();
+			await expect( page.getByText( 'Pagamenti online (WooCommerce)' ) ).toBeVisible( { timeout: 1000 } );
+		} ).toPass( { timeout: 15000 } );
 		await expect( page.getByText( 'Gestione ordini e spedizione (WooCommerce)' ) ).toBeVisible();
-		await expect( page.getByText( 'Pagamenti online (WooCommerce)' ) ).toBeVisible();
 
 		await page.goto( ADMIN_PAGES.generator );
 		const preview = page.locator( '.dbph-preview' );

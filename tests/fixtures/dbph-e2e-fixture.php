@@ -162,6 +162,8 @@ function dbph_e2e_reset_state( $args = array() ) {
 			activate_plugin( $woo );
 		}
 		update_option( 'woocommerce_coming_soon', 'no' );
+		// Alla prima attivazione Woo reindirizza l'admin alla procedura guidata.
+		delete_transient( '_wc_activation_redirect' );
 	} elseif ( is_plugin_active( $woo ) ) {
 		deactivate_plugins( $woo, true );
 	}

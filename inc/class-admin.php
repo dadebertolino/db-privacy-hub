@@ -1044,8 +1044,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 							<div><strong><?php echo (int) $stats['manual']; ?></strong><br><small><?php esc_html_e( 'Manuali', 'db-privacy-hub' ); ?></small></div>
 							<div><strong><?php echo (int) $stats['export_done']; ?></strong><br><small><?php esc_html_e( 'Accesso evasi', 'db-privacy-hub' ); ?></small></div>
 							<div><strong><?php echo (int) $stats['erase_done']; ?></strong><br><small><?php esc_html_e( 'Cancellazioni evase', 'db-privacy-hub' ); ?></small></div>
-							<div style="<?php echo $stats['due_soon'] > 0 ? 'color:#d97706' : ''; ?>"><strong><?php echo (int) $stats['due_soon']; ?></strong><br><small><?php esc_html_e( 'In scadenza (< 10 gg)', 'db-privacy-hub' ); ?></small></div>
-							<div style="<?php echo $stats['overdue'] > 0 ? 'color:#dc2626;font-weight:600' : ''; ?>"><strong><?php echo (int) $stats['overdue']; ?></strong><br><small><?php esc_html_e( 'Scadute', 'db-privacy-hub' ); ?></small></div>
+							<div style="<?php echo $stats['due_soon'] > 0 ? 'color:#b45309' : ''; ?>"><strong><?php echo (int) $stats['due_soon']; ?></strong><br><small><?php esc_html_e( 'In scadenza (< 10 gg)', 'db-privacy-hub' ); ?></small></div>
+							<div style="<?php echo $stats['overdue'] > 0 ? 'color:#b91c1c;font-weight:600' : ''; ?>"><strong><?php echo (int) $stats['overdue']; ?></strong><br><small><?php esc_html_e( 'Scadute', 'db-privacy-hub' ); ?></small></div>
 						</div>
 					</div>
 
@@ -1102,11 +1102,11 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 									<td><?php echo esc_html( $e->requested_at ? $e->requested_at : '—' ); ?></td>
 									<td>
 										<?php if ( $deadline['class'] === 'overdue' ) : ?>
-											<span style="color:#dc2626;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
+											<span style="color:#b91c1c;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
 										<?php elseif ( $deadline['class'] === 'due_soon' ) : ?>
-											<span style="color:#d97706;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
+											<span style="color:#b45309;font-weight:600"><?php echo esc_html( $deadline['label'] ); ?></span>
 										<?php elseif ( $deadline['class'] === 'ok' ) : ?>
-											<span style="color:#16a34a"><?php echo esc_html( $deadline['label'] ); ?></span>
+											<span style="color:#15803d"><?php echo esc_html( $deadline['label'] ); ?></span>
 										<?php else : ?>
 											<span style="color:#9ca3af">—</span>
 										<?php endif; ?>

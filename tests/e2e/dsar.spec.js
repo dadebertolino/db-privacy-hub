@@ -41,7 +41,7 @@ test.describe( 'strumenti privacy di WordPress', () => {
 		expect( await lastDsar( request ) ).toMatchObject( { source: 'wp_native', request_type: 'export', status: 'confirmed' } );
 
 		await row.hover();
-		await row.locator( '.export-personal-data-handle' ).click();
+		await row.getByRole( 'button', { name: 'Download personal data', exact: true } ).click();
 		await expect.poll( async () => ( await lastDsar( request ) ).status, { timeout: 20000 } ).toBe( 'completed' );
 
 		await page.goto( ADMIN_PAGES.dsarLog );
@@ -56,7 +56,7 @@ test.describe( 'strumenti privacy di WordPress', () => {
 
 		const row = await wpRequest( page, 'erase', 'erase@e2e.test' );
 		await row.hover();
-		await row.locator( '.remove-personal-data-handle' ).click();
+		await row.getByRole( 'button', { name: 'Erase personal data', exact: true } ).click();
 		await expect.poll( async () => ( await lastDsar( request ) ).status, { timeout: 20000 } ).toBe( 'partial' );
 
 		await page.goto( ADMIN_PAGES.dsarLog );
@@ -77,7 +77,7 @@ test.describe( 'strumenti privacy di WordPress', () => {
 
 		const row = await wpRequest( page, 'erase', 'rotto@e2e.test' );
 		await row.hover();
-		await row.locator( '.remove-personal-data-handle' ).click();
+		await row.getByRole( 'button', { name: 'Erase personal data', exact: true } ).click();
 
 		await expect.poll( async () => ( await lastDsar( request ) ).status, { timeout: 20000 } ).toBe( 'partial' );
 		await expect( row ).not.toContainText( 'error', { ignoreCase: true } );

@@ -105,18 +105,25 @@ jobs:
   # INTEGRATION — PHPUnit + WordPress test suite + MySQL reale
   # ---------------------------------------------------------------------------
   integration:
-    name: Integration (WP ${{ matrix.wp }})
+    name: Integration (WP ${{ matrix.wp }}${{ matrix.multisite == '1' && ', multisite' || '' }})
     runs-on: ubuntu-latest
     needs: [ lint ]
     strategy:
       fail-fast: false
       matrix:
         # 6.0 = minimo dichiarato nel plugin header, latest = versione corrente.
+        # La variante multisite esegue anche i test @group ms-required
+        # (disinstallazione su più siti, tabelle dei siti eliminati).
         include:
           - wp: '6.0'
             php: '8.0'
+            multisite: '0'
           - wp: latest
             php: '8.3'
+            multisite: '0'
+          - wp: latest
+            php: '8.3'
+            multisite: '1'
     services:
       mysql:
         image: mysql:8.0
@@ -153,6 +160,7 @@ jobs:
       - name: PHPUnit (integration)
         env:
           WP_TESTS_DIR: /tmp/wordpress-tests-lib
+          WP_MULTISITE: ${{ matrix.multisite }}
         run: vendor/bin/phpunit -c phpunit-integration.xml.dist --colors=always
 
   # ---------------------------------------------------------------------------

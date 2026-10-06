@@ -26,27 +26,59 @@ class DsarLogTest extends TestCase {
 	}
 
 	/**
-	 * Riga di log con requested_at (ora locale del sito) a $seconds_ago
-	 * secondi da adesso.
+	 * Riga di log con requested_at (ora locale del sito).
 	 */
-	private function row( $seconds_ago, $status = 'received' ) {
+	private function row( $requested_at, $status = 'received' ) {
 		return (object) array(
 			'status'       => $status,
-			'requested_at' => gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - $seconds_ago ),
+			'requested_at' => $requested_at,
 		);
 	}
 
-	/* --- calculate_deadline ------------------------------------------------ */
+	/**
+	 * Timestamp "locale nudo", come current_time( 'timestamp' ).
+	 */
+	private function local_ts( $datetime ) {
+		return ( new DateTimeImmutable( $datetime, new DateTimeZone( 'UTC' ) ) )->getTimestamp();
+	}
+
+	private function deadline( $requested_at, $now, $status = 'received' ) {
+		return DBPH_DSAR_Log::calculate_deadline( $this->row( $requested_at, $status ), $this->local_ts( $now ) );
+	}
+
+	/* --- deadline_for: un mese di calendario (bug 19) --------------------- */
+
+	/**
+	 * @dataProvider provide_termini
+	 */
+	public function test_termine_di_un_mese( $requested, $expected ): void {
+		$deadline = DBPH_DSAR_Log::deadline_for( new DateTimeImmutable( $requested, new DateTimeZone( 'UTC' ) ) );
+		$this->assertSame( $expected, $deadline->format( 'Y-m-d H:i:s' ) );
+	}
+
+	public function provide_termini() {
+		return array(
+			'stesso giorno'         => array( '2026-03-15 10:30:00', '2026-04-15 10:30:00' ),
+			'31 gennaio → febbraio' => array( '2026-01-31 09:00:00', '2026-02-28 09:00:00' ),
+			'anno bisestile'        => array( '2028-01-30 09:00:00', '2028-02-29 09:00:00' ),
+			'31 marzo → aprile'     => array( '2026-03-31 09:00:00', '2026-04-30 09:00:00' ),
+			'dicembre → gennaio'    => array( '2026-12-31 23:00:00', '2027-01-31 23:00:00' ),
+			'febbraio: 28 giorni'   => array( '2026-02-01 00:00:00', '2026-03-01 00:00:00' ),
+		);
+	}
+
+	/* --- calculate_deadline (bug 6, 17, 19) -------------------------------- */
 
 	public function test_richiesta_appena_ricevuta(): void {
-		$d = DBPH_DSAR_Log::calculate_deadline( $this->row( 60 ) );
+		$d = $this->deadline( '2026-03-15 10:00:00', '2026-03-15 10:01:00' );
 
 		$this->assertSame( 'ok', $d['class'] );
-		$this->assertSame( 29, $d['days'] );
+		$this->assertSame( 30, $d['days'] );
+		$this->assertSame( '30 giorni', $d['label'] );
 	}
 
 	public function test_in_scadenza_sotto_i_dieci_giorni(): void {
-		$d = DBPH_DSAR_Log::calculate_deadline( $this->row( 21 * DAY_IN_SECONDS ) );
+		$d = $this->deadline( '2026-03-15 10:00:00', '2026-04-05 12:00:00' );
 
 		$this->assertSame( 'due_soon', $d['class'] );
 		$this->assertSame( 9, $d['days'] );
@@ -56,53 +88,61 @@ class DsarLogTest extends TestCase {
 	public function test_a_dieci_giorni_e_mezzo_non_e_ancora_in_scadenza(): void {
 		// Con il vecchio round() 10,5 giorni diventavano "10 → in scadenza",
 		// mentre il contatore SQL non la contava.
-		$d = DBPH_DSAR_Log::calculate_deadline( $this->row( 19 * DAY_IN_SECONDS + 12 * HOUR_IN_SECONDS ) );
+		$d = $this->deadline( '2026-03-15 10:00:00', '2026-04-04 22:00:00' );
 
 		$this->assertSame( 'ok', $d['class'] );
 		$this->assertSame( 10, $d['days'] );
 	}
 
 	/**
-	 * Bordo dei 30 giorni: il badge deve coincidere con il contatore SQL
-	 * di get_stats() (scaduta se requested_at < adesso − 30 giorni).
+	 * Bordo del termine: il badge deve coincidere con il contatore SQL di
+	 * get_stats() (scaduta se DATE_ADD(requested_at, INTERVAL 1 MONTH) < adesso).
 	 *
-	 * @dataProvider provide_bordo_trenta_giorni
+	 * @dataProvider provide_bordo_del_termine
 	 */
-	public function test_bordo_dei_trenta_giorni( $seconds_ago, $class, $days ): void {
-		$d = DBPH_DSAR_Log::calculate_deadline( $this->row( $seconds_ago ) );
+	public function test_bordo_del_termine( $requested, $now, $class, $days ): void {
+		$d = $this->deadline( $requested, $now );
 
 		$this->assertSame( $class, $d['class'] );
 		$this->assertSame( $days, $d['days'] );
 	}
 
-	public function provide_bordo_trenta_giorni() {
+	public function provide_bordo_del_termine() {
 		return array(
-			'29 giorni'            => array( 29 * DAY_IN_SECONDS, 'due_soon', 1 ),
-			'30 giorni meno 1 ora' => array( 30 * DAY_IN_SECONDS - HOUR_IN_SECONDS, 'due_soon', 0 ),
-			'30 giorni più 1 ora'  => array( 30 * DAY_IN_SECONDS + HOUR_IN_SECONDS, 'overdue', -1 ),
-			'31 giorni'            => array( 31 * DAY_IN_SECONDS, 'overdue', -1 ),
-			'40 giorni e mezzo'    => array( 40 * DAY_IN_SECONDS + 12 * HOUR_IN_SECONDS, 'overdue', -11 ),
+			'un giorno prima'          => array( '2026-03-15 10:00:00', '2026-04-14 10:00:00', 'due_soon', 1 ),
+			'un\'ora prima'            => array( '2026-03-15 10:00:00', '2026-04-15 09:00:00', 'due_soon', 0 ),
+			'allo scoccare'            => array( '2026-03-15 10:00:00', '2026-04-15 10:00:00', 'due_soon', 0 ),
+			'un\'ora dopo'             => array( '2026-03-15 10:00:00', '2026-04-15 11:00:00', 'overdue', -1 ),
+			'dieci giorni e mezzo dopo' => array( '2026-03-15 10:00:00', '2026-04-25 22:00:00', 'overdue', -11 ),
+			// 30 giorni dal 31 gennaio cadrebbero il 2 marzo: con il termine
+			// di un mese la richiesta è già scaduta il 1° marzo.
+			'febbraio: scaduta prima dei 30 giorni' => array( '2026-01-31 09:00:00', '2026-03-01 09:00:00', 'overdue', -1 ),
 		);
 	}
 
 	public function test_etichetta_scaduta(): void {
-		$d = DBPH_DSAR_Log::calculate_deadline( $this->row( 35 * DAY_IN_SECONDS ) );
+		$d = $this->deadline( '2026-03-15 10:00:00', '2026-04-20 09:00:00' );
 		$this->assertSame( 'Scaduta (+5 gg)', $d['label'] );
 	}
 
+	public function test_senza_now_usa_l_ora_locale_del_sito(): void {
+		$requested = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - HOUR_IN_SECONDS );
+		$this->assertSame( 'ok', DBPH_DSAR_Log::calculate_deadline( $this->row( $requested ) )['class'] );
+	}
+
 	public function test_indipendente_dal_fuso_di_default_di_php(): void {
-		$expected = DBPH_DSAR_Log::calculate_deadline( $this->row( 25 * DAY_IN_SECONDS ) );
+		$expected = $this->deadline( '2026-03-15 10:00:00', '2026-04-08 10:00:00' );
 
 		date_default_timezone_set( 'America/New_York' );
 
-		$this->assertSame( $expected, DBPH_DSAR_Log::calculate_deadline( $this->row( 25 * DAY_IN_SECONDS ) ) );
+		$this->assertSame( $expected, $this->deadline( '2026-03-15 10:00:00', '2026-04-08 10:00:00' ) );
 	}
 
 	/**
 	 * @dataProvider provide_stati_chiusi
 	 */
 	public function test_stati_chiusi_senza_scadenza( $status ): void {
-		$this->assertSame( '', DBPH_DSAR_Log::calculate_deadline( $this->row( 40 * DAY_IN_SECONDS, $status ) )['class'] );
+		$this->assertSame( '', $this->deadline( '2026-01-01 10:00:00', '2026-04-01 10:00:00', $status )['class'] );
 	}
 
 	public function provide_stati_chiusi() {
@@ -111,8 +151,35 @@ class DsarLogTest extends TestCase {
 
 	public function test_riga_assente_o_data_non_valida(): void {
 		$this->assertSame( '', DBPH_DSAR_Log::calculate_deadline( null )['class'] );
-		$this->assertSame( '', DBPH_DSAR_Log::calculate_deadline( (object) array( 'status' => 'received', 'requested_at' => '' ) )['class'] );
-		$this->assertSame( '', DBPH_DSAR_Log::calculate_deadline( (object) array( 'status' => 'received', 'requested_at' => 'ieri' ) )['class'] );
+		$this->assertSame( '', DBPH_DSAR_Log::calculate_deadline( $this->row( '' ) )['class'] );
+		$this->assertSame( '', DBPH_DSAR_Log::calculate_deadline( $this->row( 'ieri' ) )['class'] );
+	}
+
+	/* --- Retention --------------------------------------------------------- */
+
+	/**
+	 * @dataProvider provide_anni
+	 */
+	public function test_sanitize_retention_years( $value, $expected ): void {
+		$this->assertSame( $expected, DBPH_DSAR_Log::sanitize_retention_years( $value ) );
+	}
+
+	public function provide_anni() {
+		return array(
+			'default'       => array( '5', 5 ),
+			'zero'          => array( 0, 0 ),
+			'negativo'      => array( '-3', 0 ),
+			'oltre il max'  => array( 99, 20 ),
+			'decimale'      => array( '2.7', 2 ),
+			'non numerico'  => array( 'abc', 5 ),
+			'vuoto'         => array( '', 5 ),
+		);
+	}
+
+	public function test_retention_di_default(): void {
+		$this->assertSame( 5, DBPH_DSAR_Log::get_retention_years() );
+		update_option( DBPH_DSAR_Log::RETENTION_OPTION, '0' );
+		$this->assertSame( 0, DBPH_DSAR_Log::get_retention_years() );
 	}
 
 	/* --- mask_email / hash_email (bug 13) --------------------------------- */

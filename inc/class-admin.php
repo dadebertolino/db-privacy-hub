@@ -295,12 +295,8 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$titolare = DBPH_Policy_Generator::get_titolare();
 			$page_title = (string) get_option( 'dbph_page_title', __( 'Privacy Policy', 'db-privacy-hub' ) );
 			$page_slug  = (string) get_option( 'dbph_page_slug', 'privacy-policy' );
-			$current_page_id = (int) get_option( 'dbph_page_id', 0 );
 
-			$current_page = $current_page_id > 0 ? get_post( $current_page_id ) : null;
-			if ( $current_page && ( $current_page->post_status === 'trash' || $current_page->post_type !== 'page' ) ) {
-				$current_page = null;
-			}
+			$current_page = DBPH_Policy_Publisher::get_linked_page();
 
 			$preview_html = DBPH_Policy_Generator::generate();
 			?>
@@ -383,6 +379,12 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 										<p class="description" style="margin-top: 4px;"><?php esc_html_e( 'Se attivo, la disinstallazione del plugin NON rimuove il log DSAR, l\'archivio delle versioni della Privacy Policy e le impostazioni. Consigliato: il registro delle richieste DSAR è documentazione di accountability (art. 5.2 GDPR) che potresti dover esibire anche dopo aver rimosso il plugin.', 'db-privacy-hub' ); ?></p>
 									</span>
 								</label>
+							</div>
+							<?php // 1.8.0: conservazione limitata del log DSAR. ?>
+							<div class="db-ui-field" style="grid-column: 1 / -1;">
+								<label for="dbph_dsar_retention"><strong><?php esc_html_e( 'Conservazione dello storico DSAR (anni)', 'db-privacy-hub' ); ?></strong></label>
+								<input type="number" id="dbph_dsar_retention" name="dbph[dsar_retention_years]" min="0" max="<?php echo (int) DBPH_DSAR_Log::RETENTION_MAX_YEARS; ?>" step="1" value="<?php echo (int) DBPH_DSAR_Log::get_retention_years(); ?>" class="small-text">
+								<p class="description"><?php esc_html_e( 'Le richieste chiuse (evase, respinte o scadute) più vecchie di questo periodo vengono eliminate automaticamente ogni giorno. Le richieste ancora aperte non vengono mai eliminate. 0 = conserva per sempre. L\'archivio delle versioni della Privacy Policy non viene toccato: le versioni sono citate dai consensi registrati.', 'db-privacy-hub' ); ?></p>
 							</div>
 						</div>
 					</div>
@@ -488,6 +490,24 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 									<?php
 									$selected_target = $current_page ? (string) $current_page->ID : 'new';
 									?>
+									<?php
+									// 1.8.0: la pagina collegata è un'opzione propria (prima era
+									// esclusa dai candidati ma preselezionata: il browser
+									// ripiegava su "Crea nuova pagina" e ogni pubblicazione
+									// creava un duplicato).
+									if ( $current_page ) :
+										?>
+										<option value="<?php echo (int) $current_page->ID; ?>" data-linked="1" <?php selected( $selected_target, (string) $current_page->ID ); ?>>
+											<?php
+											printf(
+												/* translators: 1: titolo pagina, 2: ID */
+												esc_html__( 'Aggiorna la pagina collegata: %1$s (ID %2$d)', 'db-privacy-hub' ),
+												esc_html( $current_page->post_title ),
+												(int) $current_page->ID
+											);
+											?>
+										</option>
+									<?php endif; ?>
 									<option value="new" <?php selected( $selected_target, 'new' ); ?>>
 										<?php esc_html_e( '— Crea nuova pagina —', 'db-privacy-hub' ); ?>
 									</option>
@@ -545,14 +565,20 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 					var form = document.getElementById('dbph-publish-form');
 					if (!sel || !warn || !form) return;
 
+					// La pagina già collegata all'Hub si aggiorna senza avviso:
+					// l'avviso riguarda le pagine scritte a mano.
+					function overwritesOther() {
+						var opt = sel.options[sel.selectedIndex];
+						return sel.value && sel.value !== 'new' && !(opt && opt.getAttribute('data-linked'));
+					}
 					function refresh() {
-						warn.style.display = (sel.value && sel.value !== 'new') ? '' : 'none';
+						warn.style.display = overwritesOther() ? '' : 'none';
 					}
 					sel.addEventListener('change', refresh);
 					refresh();
 
 					form.addEventListener('submit', function(e){
-						if (sel.value && sel.value !== 'new') {
+						if (overwritesOther()) {
 							var opt = sel.options[sel.selectedIndex];
 							var title = opt.getAttribute('data-title') || ('ID ' + sel.value);
 							var msg = <?php /* translators: %s: titolo della pagina */ echo wp_json_encode( __( 'Stai per sovrascrivere il contenuto della pagina "%s". L\'operazione è reversibile dalle revisioni WordPress della pagina ma agisce immediatamente. Continuare?', 'db-privacy-hub' ) ); ?>;
@@ -686,6 +712,14 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$preserve = isset( $_POST['dbph']['preserve_data_on_uninstall'] ) ? '1' : '0';
 			update_option( 'dbph_preserve_data_on_uninstall', $preserve );
 
+			// 1.8.0: conservazione dello storico DSAR.
+			if ( isset( $_POST['dbph']['dsar_retention_years'] ) ) {
+				update_option(
+					DBPH_DSAR_Log::RETENTION_OPTION,
+					DBPH_DSAR_Log::sanitize_retention_years( sanitize_text_field( wp_unslash( $_POST['dbph']['dsar_retention_years'] ) ) )
+				);
+			}
+
 			// 1.6.0: piattaforme embed abilitate a mano + contitolarità pagine social.
 			$embed_manual = array();
 			if ( isset( $_POST['dbph']['embed_manual'] ) && is_array( $_POST['dbph']['embed_manual'] ) ) {
@@ -760,159 +794,24 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 			$target_id  = ( $target_raw === 'new' ) ? 0 : (int) $target_raw;
 
 			if ( $target_id > 0 ) {
-				return self::do_overwrite_page( $target_id, $content );
+				self::redirect_after_publish( DBPH_Policy_Publisher::overwrite( $target_id, $content ), 'page_updated' );
 			}
 
-			return self::do_create_new_page( $title, $slug, $content );
+			self::redirect_after_publish( DBPH_Policy_Publisher::create( $title, $slug, $content ), 'page_created' );
 		}
 
 		/**
-		 * Sovrascrive il contenuto di una pagina WordPress esistente con la
-		 * Privacy Policy generata. Non tocca titolo né slug della pagina.
+		 * Redirect alla pagina del generatore con l'esito della pubblicazione.
 		 *
-		 * Salva uno snapshot del contenuto pre-overwrite nell'archivio Hub
-		 * (oltre alle revisioni native di WordPress che vengono create
-		 * automaticamente da wp_update_post).
-		 *
-		 * @param int    $page_id ID della pagina da sovrascrivere.
-		 * @param string $content Nuovo contenuto.
-		 * @return void
+		 * @param int|WP_Error $result
+		 * @param string       $ok_msg
 		 */
-		private static function do_overwrite_page( $page_id, $content ) {
-			$page = get_post( $page_id );
-			if ( ! $page || $page->post_type !== 'page' || $page->post_status === 'trash' ) {
-				wp_safe_redirect(
-					add_query_arg(
-						array(
-							'page' => self::PAGE_GENERATOR,
-							'dbph_msg' => 'page_error',
-						),
-						admin_url( 'admin.php' )
-					)
-				);
-				exit;
-			}
-
-			// Snapshot del contenuto PRECEDENTE: utile come backup esplicito
-			// nell'archivio Hub. Le revisioni WP coprono il post stesso, ma
-			// se l'admin un domani cancella la pagina, le revisioni spariscono;
-			// l'archivio Hub invece resta.
-			if ( class_exists( 'DBPH_Policy_Archive' ) && trim( (string) $page->post_content ) !== '' ) {
-				DBPH_Policy_Archive::save(
-					(string) $page->post_content,
-					sprintf(
-						/* translators: 1: titolo pagina, 2: ID */
-						__( 'Backup pre-sovrascrittura di "%1$s" (ID %2$d)', 'db-privacy-hub' ),
-						$page->post_title,
-						(int) $page->ID
-					)
-				);
-			}
-
-			DBPH_Policy_Archive::set_publishing( true );
-			$updated = wp_update_post(
-				array(
-					'ID'           => (int) $page_id,
-					'post_content' => $content,
-					'post_status'  => $page->post_status === 'publish' ? 'publish' : $page->post_status,
-				),
-				true
-			);
-			DBPH_Policy_Archive::set_publishing( false );
-
-			if ( is_wp_error( $updated ) || 0 === $updated ) {
-				wp_safe_redirect(
-					add_query_arg(
-						array(
-							'page' => self::PAGE_GENERATOR,
-							'dbph_msg' => 'page_error',
-						),
-						admin_url( 'admin.php' )
-					)
-				);
-				exit;
-			}
-
-			// Lega l'Hub a questa pagina e impostala come privacy policy del sito.
-			update_option( 'dbph_page_id', (int) $page_id );
-			update_option( 'wp_page_for_privacy_policy', (int) $page_id );
-
-			// Snapshot del contenuto NUOVO appena pubblicato. 1.7.0: archiviamo
-			// il post_content effettivamente salvato (kses può alterarlo per
-			// utenti senza unfiltered_html), non l'HTML generato.
-			if ( class_exists( 'DBPH_Policy_Archive' ) ) {
-				$saved = get_post( (int) $page_id );
-				DBPH_Policy_Archive::save(
-					$saved ? (string) $saved->post_content : $content,
-					sprintf(
-						/* translators: 1: titolo pagina, 2: ID */
-						__( 'Pubblicazione su "%1$s" (ID %2$d)', 'db-privacy-hub' ),
-						$page->post_title,
-						(int) $page->ID
-					)
-				);
-			}
-
+		private static function redirect_after_publish( $result, $ok_msg ) {
 			wp_safe_redirect(
 				add_query_arg(
 					array(
-						'page' => self::PAGE_GENERATOR,
-						'dbph_msg' => 'page_updated',
-					),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		/**
-		 * Crea una nuova pagina WordPress con titolo/slug configurati.
-		 *
-		 * @param string $title
-		 * @param string $slug
-		 * @param string $content
-		 * @return void
-		 */
-		private static function do_create_new_page( $title, $slug, $content ) {
-			DBPH_Policy_Archive::set_publishing( true );
-			$new_id = wp_insert_post(
-				array(
-					'post_title'   => $title,
-					'post_name'    => $slug,
-					'post_content' => $content,
-					'post_type'    => 'page',
-					'post_status'  => 'publish',
-				),
-				true
-			);
-			DBPH_Policy_Archive::set_publishing( false );
-
-			if ( is_wp_error( $new_id ) || 0 === $new_id ) {
-				wp_safe_redirect(
-					add_query_arg(
-						array(
-							'page' => self::PAGE_GENERATOR,
-							'dbph_msg' => 'page_error',
-						),
-						admin_url( 'admin.php' )
-					)
-				);
-				exit;
-			}
-
-			update_option( 'dbph_page_id', (int) $new_id );
-			update_option( 'wp_page_for_privacy_policy', (int) $new_id );
-
-			if ( class_exists( 'DBPH_Policy_Archive' ) ) {
-				$saved = get_post( (int) $new_id );
-				DBPH_Policy_Archive::save( $saved ? (string) $saved->post_content : $content, __( 'Pubblicazione iniziale', 'db-privacy-hub' ) );
-			}
-
-			wp_safe_redirect(
-				add_query_arg(
-					array(
-						'page' => self::PAGE_GENERATOR,
-						'dbph_msg' => 'page_created',
+						'page'     => self::PAGE_GENERATOR,
+						'dbph_msg' => is_wp_error( $result ) ? 'page_error' : $ok_msg,
 					),
 					admin_url( 'admin.php' )
 				)
@@ -1131,24 +1030,6 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 					<?php esc_html_e( 'Registro permanente delle richieste di esercizio dei diritti dell\'interessato (artt. 15-22 GDPR). Include sia richieste avviate via Strumenti → Esporta/Cancella dati personali di WordPress, sia richieste registrate manualmente (es. arrivate via email/PEC). Le email sono mascherate; un hash SHA-256 permette la verifica senza esposizione.', 'db-privacy-hub' ); ?>
 				</p>
 
-				<?php
-				// Notice di feedback per le azioni manual.
-				if ( ! empty( $_GET['dbph_msg'] ) ) {
-					$messages = array(
-						'manual_saved'   => __( 'Richiesta DSAR manuale salvata correttamente.', 'db-privacy-hub' ),
-						'manual_updated' => __( 'Richiesta DSAR aggiornata.', 'db-privacy-hub' ),
-						'manual_deleted' => __( 'Richiesta DSAR eliminata.', 'db-privacy-hub' ),
-					);
-					$key = sanitize_key( $_GET['dbph_msg'] );
-					if ( isset( $messages[ $key ] ) ) {
-						printf(
-							'<div class="db-ui-alert db-ui-alert-success" style="margin:12px 0"><span class="db-ui-alert-icon" aria-hidden="true">✅</span><span>%s</span></div>',
-							esc_html( $messages[ $key ] )
-						);
-					}
-				}
-				?>
-
 				<?php if ( $total === 0 ) : ?>
 					<div class="db-ui-alert db-ui-alert-info">
 						<span class="db-ui-alert-icon" aria-hidden="true">ℹ️</span>
@@ -1156,12 +1037,13 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 					</div>
 				<?php else : ?>
 					<div class="db-ui-card">
-						<div class="db-ui-card-body" style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px">
+						<div class="db-ui-card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px">
 							<div><strong><?php echo (int) $stats['total']; ?></strong><br><small><?php esc_html_e( 'Totali', 'db-privacy-hub' ); ?></small></div>
+							<div><strong><?php echo (int) $stats['open']; ?></strong><br><small><?php esc_html_e( 'Aperte', 'db-privacy-hub' ); ?></small></div>
 							<div><strong><?php echo (int) $stats['manual']; ?></strong><br><small><?php esc_html_e( 'Manuali', 'db-privacy-hub' ); ?></small></div>
 							<div><strong><?php echo (int) $stats['export_done']; ?></strong><br><small><?php esc_html_e( 'Accesso evasi', 'db-privacy-hub' ); ?></small></div>
 							<div><strong><?php echo (int) $stats['erase_done']; ?></strong><br><small><?php esc_html_e( 'Cancellazioni evase', 'db-privacy-hub' ); ?></small></div>
-							<div style="<?php echo $stats['due_soon'] > 0 ? 'color:#d97706' : ''; ?>"><strong><?php echo (int) $stats['due_soon']; ?></strong><br><small><?php esc_html_e( 'In scadenza (≤10gg)', 'db-privacy-hub' ); ?></small></div>
+							<div style="<?php echo $stats['due_soon'] > 0 ? 'color:#d97706' : ''; ?>"><strong><?php echo (int) $stats['due_soon']; ?></strong><br><small><?php esc_html_e( 'In scadenza (< 10 gg)', 'db-privacy-hub' ); ?></small></div>
 							<div style="<?php echo $stats['overdue'] > 0 ? 'color:#dc2626;font-weight:600' : ''; ?>"><strong><?php echo (int) $stats['overdue']; ?></strong><br><small><?php esc_html_e( 'Scadute', 'db-privacy-hub' ); ?></small></div>
 						</div>
 					</div>
@@ -1736,7 +1618,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'date_from' => isset( $_GET['date_from'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_from'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
 				'date_to'   => isset( $_GET['date_to'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_to'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
 				'subject'   => isset( $_GET['subject'] ) ? sanitize_text_field( wp_unslash( $_GET['subject'] ) ) : '',
-				'source'    => isset( $_GET['source'] ) ? sanitize_key( $_GET['source'] ) : '',
+				'source'    => isset( $_GET['source'] ) ? sanitize_key( wp_unslash( $_GET['source'] ) ) : '',
 			);
 
 			$rows = empty( $sources ) ? array() : DBPH_Consents_Register::query_all( $args, 200 );
@@ -1903,7 +1785,7 @@ if ( ! class_exists( 'DBPH_Admin' ) ) {
 				'date_from' => isset( $_GET['date_from'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_from'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
 				'date_to'   => isset( $_GET['date_to'] ) ? self::sanitize_ymd( wp_unslash( $_GET['date_to'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_ymd() sanitizza e valida.
 				'subject'   => isset( $_GET['subject'] ) ? sanitize_text_field( wp_unslash( $_GET['subject'] ) ) : '',
-				'source'    => isset( $_GET['source'] ) ? sanitize_key( $_GET['source'] ) : '',
+				'source'    => isset( $_GET['source'] ) ? sanitize_key( wp_unslash( $_GET['source'] ) ) : '',
 			);
 
 			// Per il CSV recuperiamo tutto, senza il limite di 200.

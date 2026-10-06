@@ -3,7 +3,7 @@
  * Plugin Name:       DB Privacy Hub
  * Plugin URI:        https://www.davidebertolino.it/progetti/db-privacy-hub/
  * Description:       Hub privacy unificato per l'ecosistema plugin DB. Raccoglie i trattamenti dichiarati dai plugin DB (Cookie Manager, Form Builder, SEO Manager…) e genera una Privacy Policy completa (artt. 13-14 GDPR) pronta da pubblicare come pagina WordPress. Importa automaticamente la Cookie Policy dal DB Cookie Manager se installato. Niente servizi esterni, niente tracciamento.
- * Version:           1.7.0
+ * Version:           1.8.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Davide Bertolino
@@ -34,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /* -------------------------------------------------------------------------
  * Costanti
  * ---------------------------------------------------------------------- */
-define( 'DBPH_VERSION', '1.7.0' );
+define( 'DBPH_VERSION', '1.8.0' );
 define( 'DBPH_FILE', __FILE__ );
 define( 'DBPH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DBPH_URL', plugin_dir_url( __FILE__ ) );
@@ -54,6 +54,7 @@ require_once DBPH_DIR . 'inc/class-register.php';
 require_once DBPH_DIR . 'inc/class-responsabili.php';
 require_once DBPH_DIR . 'inc/class-policy-archive.php';
 require_once DBPH_DIR . 'inc/class-policy-generator.php';
+require_once DBPH_DIR . 'inc/class-policy-publisher.php';
 require_once DBPH_DIR . 'inc/class-deprecated-aliases.php';
 require_once DBPH_DIR . 'inc/class-dsar.php';
 require_once DBPH_DIR . 'inc/class-dsar-log.php';
@@ -88,6 +89,23 @@ function dbph_boot() {
 	DBPH_Admin::init();
 }
 add_action( 'plugins_loaded', 'dbph_boot', 5 );
+
+/**
+ * Multisite: quando un sito viene eliminato, elimina anche le tabelle
+ * dell'Hub di quel sito (il core elimina solo le proprie). 1.8.0.
+ *
+ * @param string[] $tables  Tabelle che il core sta per eliminare.
+ * @param int      $site_id
+ * @return string[]
+ */
+function dbph_drop_site_tables( $tables, $site_id ) {
+	global $wpdb;
+	$prefix   = $wpdb->get_blog_prefix( $site_id );
+	$tables[] = $prefix . 'dbph_dsar_log';
+	$tables[] = $prefix . 'dbph_policy_archive';
+	return $tables;
+}
+add_filter( 'wpmu_drop_tables', 'dbph_drop_site_tables', 10, 2 );
 
 /**
  * Carica le traduzioni.

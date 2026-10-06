@@ -18,7 +18,7 @@ class DsarRequestedAtIntegrationTest extends WP_UnitTestCase {
 		// Fuso diverso da UTC: requested_at è in ora locale del sito.
 		update_option( 'timezone_string', 'Europe/Rome' );
 		global $wpdb;
-		$wpdb->query( 'TRUNCATE TABLE ' . $wpdb->prefix . DBPH_DSAR_Log::TABLE_NAME );
+		$wpdb->query( 'DELETE FROM ' . $wpdb->prefix . DBPH_DSAR_Log::TABLE_NAME );
 	}
 
 	/**

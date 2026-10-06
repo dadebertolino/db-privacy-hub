@@ -38,6 +38,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  *  - throwing_dsar   exporter ed eraser che lanciano eccezione (bug 3)
  *  - throwing_consents fonte consensi che lancia eccezione (bug 3)
  *  - bad_consents    righe consensi malformate (bug 11)
+ *  - woo_gateway     gateway di pagamento online "stripe" abilitato
+ *                    (richiede woocommerce: true)
+ *  - resp_template   modello di responsabile "dpo_esterno" dal filtro (bug 9)
  *
  * @return string[]
  */
@@ -54,6 +57,8 @@ function dbph_e2e_fake_names() {
 		'throwing_dsar',
 		'throwing_consents',
 		'bad_consents',
+		'woo_gateway',
+		'resp_template',
 	);
 }
 
@@ -114,6 +119,10 @@ function dbph_e2e_hub_options() {
  *  - seed_dsar     array       Richieste manuali nel log DSAR:
  *                              [{type, email, status, days_ago, count}].
  *  - seed_versions string[]    Versioni da inserire nell'archivio policy.
+ *  - cookie_manager bool       Attiva DB Cookie Manager (montato da .wp-env.json,
+ *                              spento in baseline: aggiungerebbe sezioni e
+ *                              trattamenti alla policy di ogni spec).
+ *                              Con `meta_pixel` (ID) ne attiva il Meta Pixel.
  *  - woocommerce   bool        Attiva WooCommerce (installato da setup-e2e.sh).
  *                              Default spento: il bridge Woo aggiungerebbe
  *                              trattamenti e destinatari a ogni spec.
@@ -155,6 +164,26 @@ function dbph_e2e_reset_state( $args = array() ) {
 		update_option( 'woocommerce_coming_soon', 'no' );
 	} elseif ( is_plugin_active( $woo ) ) {
 		deactivate_plugins( $woo, true );
+	}
+
+	// DB Cookie Manager: attivo solo su richiesta, registro consensi vuoto.
+	$cm = dbph_e2e_cookie_manager_file();
+	if ( ! empty( $args['cookie_manager'] ) ) {
+		if ( ! $cm ) {
+			return new WP_Error( 'dbph_e2e_no_cm', 'DB Cookie Manager non montato: controllare .wp-env.json.', array( 'status' => 500 ) );
+		}
+		if ( ! is_plugin_active( $cm ) ) {
+			activate_plugin( $cm );
+		}
+		$cm_settings                       = (array) get_option( 'dbcm_settings', array() );
+		$cm_settings['meta_pixel_enabled'] = ! empty( $args['meta_pixel'] );
+		$cm_settings['meta_pixel_id']      = ! empty( $args['meta_pixel'] ) ? (string) $args['meta_pixel'] : '';
+		update_option( 'dbcm_settings', $cm_settings );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( 'DELETE FROM ' . $wpdb->prefix . 'dbcm_consent_log' );
+		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_dbcm\\_rl\\_%' OR option_name LIKE '\\_transient\\_timeout\\_dbcm\\_rl\\_%'" );
+	} elseif ( $cm && is_plugin_active( $cm ) ) {
+		deactivate_plugins( $cm, true );
 	}
 
 	// Plugin finti, letti dai filtri a ogni richiesta.
@@ -233,6 +262,21 @@ function dbph_e2e_reset_state( $args = array() ) {
 }
 
 /**
+ * File principale di DB Cookie Manager, se montato da wp-env.
+ *
+ * @return string Percorso relativo a WP_PLUGIN_DIR, '' se assente.
+ */
+function dbph_e2e_cookie_manager_file() {
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+	foreach ( array_keys( get_plugins() ) as $file ) {
+		if ( basename( $file ) === 'db-cookie-manager.php' ) {
+			return $file;
+		}
+	}
+	return '';
+}
+
+/**
  * ID delle pagine con slug privacy-policy, privacy-policy-2, …
  *
  * @return int[]
@@ -276,8 +320,18 @@ function dbph_e2e_get_state() {
 	$versions  = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . $wpdb->prefix . DBPH_Policy_Archive::TABLE_NAME );
 	// phpcs:enable
 
+	// Ultimo consenso registrato dal Cookie Manager, se attivo.
+	$cm_last = null;
+	$cm      = dbph_e2e_cookie_manager_file();
+	if ( $cm && is_plugin_active( $cm ) ) {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$cm_last = $wpdb->get_row( 'SELECT consent_type, policy_version FROM ' . $wpdb->prefix . 'dbcm_consent_log ORDER BY id DESC LIMIT 1', ARRAY_A );
+	}
+
 	return array(
 		'titolare'        => $titolare,
+		'cookie_manager'  => $cm && is_plugin_active( $cm ),
+		'cm_last_consent' => $cm_last,
 		'fakes'           => isset( $fakes['enabled'] ) ? $fakes['enabled'] : array(),
 		'woocommerce'     => is_plugin_active( 'woocommerce/woocommerce.php' ),
 		'page_id'         => (int) get_option( 'dbph_page_id', 0 ),
@@ -560,5 +614,55 @@ add_filter(
 			);
 		}
 		return $erasers;
+	}
+);
+
+/* -----------------------------------------------------------------------------
+ * Gateway WooCommerce finto (fake "woo_gateway").
+ * -------------------------------------------------------------------------- */
+
+add_action(
+	'plugins_loaded',
+	function () {
+		if ( ! class_exists( 'WC_Payment_Gateway' ) || class_exists( 'DBPH_E2E_Gateway' ) ) {
+			return;
+		}
+		/**
+		 * Gateway online con id "stripe": il bridge Woo lo riconosce come
+		 * Stripe, Inc. Abilitato senza passare dalle impostazioni.
+		 */
+		class DBPH_E2E_Gateway extends WC_Payment_Gateway { // phpcs:ignore Generic.Files.OneObjectStructurePerFile.MultipleFound, Generic.Classes.OpeningBraceSameLine.ContentAfterBrace
+			public function __construct() {
+				$this->id                 = 'stripe';
+				$this->method_title       = 'Stripe (E2E)';
+				$this->method_description = 'Gateway finto per gli E2E.';
+				$this->title              = 'Carta (E2E)';
+				$this->enabled            = 'yes';
+			}
+		}
+		add_filter(
+			'woocommerce_payment_gateways',
+			function ( $gateways ) {
+				if ( dbph_e2e_fake_on( 'woo_gateway' ) ) {
+					$gateways[] = 'DBPH_E2E_Gateway';
+				}
+				return $gateways;
+			}
+		);
+	},
+	20
+);
+
+add_filter(
+	'dbph_responsabili_templates',
+	function ( $templates ) {
+		if ( dbph_e2e_fake_on( 'resp_template' ) ) {
+			$templates['dpo_esterno'] = array(
+				'label' => 'DPO esterno (E2E)',
+				'nome'  => '[Nome DPO]',
+				'ruolo' => 'Responsabile della protezione dei dati',
+			);
+		}
+		return $templates;
 	}
 );

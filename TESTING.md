@@ -101,8 +101,15 @@ pacchetto distribuito) fornisce:
 
 | Risorsa | A cosa serve |
 |---------|--------------|
-| `POST /?rest_route=/dbph-e2e/v1/reset` | Riporta l'Hub allo stato **baseline**: option dell'Hub azzerate, titolare di prova configurato, log DSAR e archivio policy vuoti, nessuna richiesta privacy del core, nessuna pagina privacy, WooCommerce spento, plugin finti spenti. Accetta `titolare` (oggetto o `false`), `fakes`, `consents_rows`, `privacy_page`, `seed_dsar`, `seed_versions`, `woocommerce`. |
-| `GET /?rest_route=/dbph-e2e/v1/state` | Stato lato server: titolare, plugin finti accesi, `dbph_page_id`, pagina privacy di WordPress, tutte le pagine `privacy-policy*` (duplicati compresi), numero di versioni e versione corrente, righe del log DSAR. |
+| `POST /?rest_route=/dbph-e2e/v1/reset` | Riporta l'Hub allo stato **baseline**: option dell'Hub azzerate, titolare di prova configurato, log DSAR e archivio policy vuoti, nessuna richiesta privacy del core, nessuna pagina privacy, WooCommerce spento, plugin finti spenti. Accetta `titolare` (oggetto o `false`), `fakes`, `consents_rows`, `privacy_page`, `seed_dsar`, `seed_versions`, `woocommerce`, `cookie_manager`, `meta_pixel`. |
+| `GET /?rest_route=/dbph-e2e/v1/state` | Stato lato server: titolare, plugin finti accesi, WooCommerce e Cookie Manager attivi, `dbph_page_id`, pagina privacy di WordPress, tutte le pagine `privacy-policy*` (duplicati compresi), numero di versioni e versione corrente, righe del log DSAR, ultimo consenso del Cookie Manager. |
+
+WooCommerce (installato da `bin/setup-e2e.sh`) e DB Cookie Manager (montato
+da `.wp-env.json` dal repository GitHub) restano **spenti** in baseline:
+aggiungerebbero trattamenti e sezioni alla policy di ogni spec. Li accendono
+`woocommerce: true` e `cookie_manager: true` (con `meta_pixel` per il Meta
+Pixel). `WP_DEBUG_DISPLAY` è spento: gli avvisi PHP finirebbero dentro le
+risposte AJAX degli strumenti privacy.
 
 ### Plugin finti (`fakes`)
 
@@ -119,6 +126,8 @@ pacchetto distribuito) fornisce:
 | `throwing_dsar` | exporter ed eraser che lanciano eccezione |
 | `throwing_consents` | fonte consensi che lancia eccezione |
 | `bad_consents` | righe consensi con campi non scalari |
+| `woo_gateway` | gateway di pagamento online `stripe` abilitato (con `woocommerce: true`) |
+| `resp_template` | modello di responsabile `dpo_esterno` dal filtro |
 
 I plugin finti malformati riproducono i bug noti del piano: finché un bug non è
 corretto, lo spec che li accende fallisce di proposito.
@@ -132,6 +141,15 @@ corretto, lo spec che li accende fallisce di proposito.
 - **chromium**: tutti gli spec, dopo `setup`. Gli spec admin usano
   `test.use( { storageState: ADMIN_STATE } )`; gli URL delle pagine admin sono
   in `ADMIN_PAGES` (`tests/e2e/helpers.js`).
+
+| Spec | Copre |
+|------|-------|
+| `admin-publish` | creazione della pagina, ripubblicazione senza duplicati (bug 7), sovrascrittura con conferma e backup (bug 4), titolare mancante, export `.md` |
+| `admin-settings` | titolare, retention DSAR (0–20), responsabili e modelli (bug 9) |
+| `dsar` | strumenti privacy di WordPress (export, cancellazione parziale, eraser rotto), CSV, richieste manuali con avviso singolo (bug 8), cruscotto |
+| `consents-history` | registro consensi (filtri, CSV, fonti rotte), storico policy (vista, diff, modifica manuale) |
+| `ecosystem` | WooCommerce (trattamenti, gateway) e DB Cookie Manager (sezione cookie, Meta Pixel, versione della policy nei consensi del banner) |
+| `a11y` | axe-core WCAG 2.1 AA sulle pagine admin dell'Hub e sulla policy pubblicata |
 
 `tests/e2e/infra.spec.js` verifica l'infrastruttura stessa (reset, stato,
 sessione admin, plugin finti): se fallisce, i risultati degli altri spec non

@@ -23,11 +23,13 @@ Il **DB Privacy Hub** raccoglie automaticamente le dichiarazioni di ogni plugin 
 - **Ponte WooCommerce** — con WooCommerce attivo, dichiara automaticamente i trattamenti e-commerce (ordini, fatturazione, account, pagamenti) e rileva i gateway di pagamento abilitati come destinatari
 - **Importazione sezioni cookie** — se il DB Cookie Manager è installato, le sezioni cookie del documento vengono importate automaticamente (niente duplicazione di logica)
 - **Router DSAR** — i plugin DB dichiarano exporter/eraser via `dbph_user_data_exporters` / `dbph_user_data_erasers`; l'Hub li registra negli strumenti privacy di WordPress normalizzandone le risposte (un plugin non conforme non blocca più la richiesta degli altri) e la sezione "Diritti dell'interessato" descrive la procedura quando almeno un plugin la implementa
-- **Storico DSAR** — log di ogni richiesta di accesso/cancellazione (anche quelle create dall'admin senza email di conferma), con esito della cancellazione (dati rimossi / trattenuti e motivazioni degli eraser) e registrazione manuale delle richieste arrivate via email/PEC
+- **Storico DSAR** — log di ogni richiesta di accesso/cancellazione (anche quelle create dall'admin senza email di conferma), con esito della cancellazione (dati rimossi / trattenuti e motivazioni degli eraser), registrazione manuale delle richieste arrivate via email/PEC (artt. 15–22) e scadenza del termine di risposta di un mese (art. 12.3)
+- **Conservazione limitata** — lo storico DSAR si ripulisce da solo delle richieste chiuse più vecchie del periodo scelto (default 5 anni)
 - **Storico Privacy Policy** — snapshot di ogni pubblicazione e di ogni modifica manuale della pagina privacy, con diff tra versioni; i consensi raccolti dai plugin DB sono collegati alla versione in vigore
 - **Pubblicazione one-click** — crea (o rigenera) una pagina WordPress con titolo e slug configurabili, e la imposta come `wp_page_for_privacy_policy` core
 - **Export `.md`** — scarica l'informativa come file Markdown
 - **Auto-update** — aggiornamenti distribuiti via GitHub Releases, visibili direttamente nel pannello WordPress
+- **Testato** — unit, integration (anche multisite) ed E2E a ogni modifica, più una run notturna su WordPress in sviluppo: vedi [TESTING.md](TESTING.md)
 
 ### Requisiti
 
@@ -39,7 +41,7 @@ Il **DB Privacy Hub** raccoglie automaticamente le dichiarazioni di ogni plugin 
 
 1. Scarica l'ultimo ZIP dalle [Releases](https://github.com/dadebertolino/db-privacy-hub/releases)
 2. WordPress → Plugin → Aggiungi nuovo → Carica plugin → Carica lo ZIP → Attiva
-3. Vai a **Privacy → Genera Privacy Policy**, compila i dati del titolare, salva, click su "Crea pagina WordPress". Fatto.
+3. Vai a **Privacy → Genera Privacy Policy**, compila i dati del titolare, salva, poi **Pubblica / Aggiorna contenuto**. Fatto: la pagina viene creata e impostata come pagina privacy del sito; le pubblicazioni successive aggiornano la stessa pagina.
 
 Il plugin si auto-aggiorna da GitHub: gli aggiornamenti compaiono direttamente nel pannello plugin di WordPress.
 
@@ -137,7 +139,7 @@ Chiude il piano di test con la suite E2E (Playwright, 37 scenari: pubblicazione,
 Release cumulativa del piano di test (`TESTING-PLAN.md`): ogni correzione ha un test automatico. Schema dell'archivio policy aggiornato a 1.1 con migrazione automatica; filtri pubblici invariati. Requisito minimo: WordPress 6.0.
 
 - **Requisito minimo WordPress 6.0** (era 5.8), allineato a DB Cookie Manager: header, controllo all'attivazione e PHPCS
-- **Fix: termine DSAR dalla data di richiesta** — se alla conferma la riga del log non esisteva ancora (richieste create prima dell'attivazione del plugin o della 1.7.0), `requested_at` diventava il momento della conferma e i 30 giorni dell'art. 12.3 GDPR partivano in ritardo; in più PHP 8 emetteva un warning (`date_created_gmt` non esiste su `WP_User_Request`). Ora la data è quella di creazione della richiesta
+- **Fix: termine DSAR dalla data di richiesta** — se alla conferma la riga del log non esisteva ancora (richieste create prima dell'attivazione del plugin o della 1.7.0), `requested_at` diventava il momento della conferma e il termine dell'art. 12.3 GDPR partiva in ritardo; in più PHP 8 emetteva un warning (`date_created_gmt` non esiste su `WP_User_Request`). Ora la data è quella di creazione della richiesta
 - **Fix: versione della policy dei consensi durante la sovrascrittura di una pagina** — il backup del testo sostituito diventava per un istante la versione corrente: un consenso registrato in quel momento (Cookie Manager, Form Builder) puntava al testo sbagliato. Ora l'archivio distingue versioni e backup (schema 1.1, migrazione automatica) e un backup non è mai la versione corrente
 - **Fix: pagine privacy duplicate** — il menu "Pagina di destinazione" non conteneva la pagina già collegata e ripiegava su "Crea nuova pagina": ogni pubblicazione creava `privacy-policy-2`, `-3`… Ora la pagina collegata è la scelta predefinita e si aggiorna senza avviso di sovrascrittura
 - **Termine di risposta DSAR di un mese** — come l'art. 12.3 GDPR e il testo della policy (prima 30 giorni, che a febbraio superano il mese); se il giorno non esiste nel mese successivo vale l'ultimo giorno del mese
@@ -331,14 +333,42 @@ Estensione completa del registro DSAR per coprire tutti gli scenari di accountab
 
 **Unified privacy hub for the DB plugin ecosystem. Collects processing declarations from DB plugins (Cookie Manager, Form Builder, SEO Manager…) and generates a complete Privacy Policy ready to publish as a WordPress page.**
 
-The plugin UI and the generated documents are in Italian, targeting GDPR-compliant Italian websites. For an English version, see future releases or contribute via PR.
+The plugin UI and the generated documents are in Italian, targeting GDPR-compliant Italian websites. Translations can be added as `db-privacy-hub-{locale}.mo` in `languages/` or `wp-content/languages/plugins/`.
 
-### Architecture summary
+### Features
 
-- Public filter `dbph_processing_register` — DB plugins hook here to declare their data processings
-- `DBPH_Policy_Generator` composes the final document combining: data controller info, declared processings, auto-detected recipients, cookie sections imported from DB Cookie Manager (if installed)
-- `DBPH_Admin` provides the top-level "Privacy" admin menu with two sub-pages: "Registro trattamenti" (read-only register view) and "Genera Privacy Policy" (form + actions)
-- Backward-compat with the legacy `dbseo_processing_register` filter from SEO Manager 1.2.x — to be removed in 2.0.0
+- **Unified processing register** — one admin page listing every processing declared by the active DB plugins (public filter `dbph_processing_register`)
+- **Privacy Policy generator** — a complete notice under GDPR arts. 13–14: data controller, declared processings, auto-detected recipients (SMTP plugins, reCAPTCHA, form webhooks, payment gateways, embedded platforms), cookie sections imported from DB Cookie Manager, data subject rights, retention, complaints
+- **WooCommerce and embeds bridges** — e-commerce processings and enabled online payment gateways; embedded content from YouTube, Vimeo, Facebook, Instagram, TikTok, X, LinkedIn, Spotify, Google Maps
+- **DSAR router** — DB plugins declare exporters/erasers (`dbph_user_data_exporters` / `_erasers`); the Hub registers them in WordPress privacy tools, normalising their responses and isolating failures so one broken plugin never blocks a request
+- **DSAR log** — every access/erasure request (WordPress tools or recorded manually, arts. 15–22), outcome of erasures (data removed / retained, with the eraser's reasons), one-month response deadline (art. 12.3), CSV export, configurable retention (default 5 years)
+- **Consent register** — unified view of consents collected by DB plugins (`dbph_consents_register`), each linked to the Privacy Policy version in force (`DBPH_Policy_Archive::get_current_version_id()`)
+- **Policy history** — a version for every publication and every manual edit of the privacy page, with diffs; overwritten hand-written pages are kept as backups that never become the current version
+- **One-click publishing** — creates or updates the page and sets it as WordPress's privacy policy page; Markdown export
+- **Auto-update** from GitHub Releases
+
+### Requirements
+
+- WordPress 6.0+
+- PHP 7.4+
+- Optional: DB Cookie Manager 3.1.0+ for the cookie sections
+
+### Installation
+
+1. Download the latest ZIP from [Releases](https://github.com/dadebertolino/db-privacy-hub/releases)
+2. WordPress → Plugins → Add New → Upload Plugin → activate
+3. **Privacy → Genera Privacy Policy**: fill in the data controller, save, then **Pubblica / Aggiorna contenuto**
+
+### Testing
+
+Unit (PHP 7.4–8.4), integration (WordPress + MySQL, including multisite) and end-to-end tests (wp-env + Playwright, with WooCommerce and DB Cookie Manager) run on every push; a nightly run checks WordPress trunk and PHP 8.4. See [TESTING.md](TESTING.md).
+
+### Recent changes
+
+- **1.8.1** — Admin accessibility: DSAR deadline colours meet WCAG 2.1 AA contrast; labelled fields in the processors form. End-to-end test suite.
+- **1.8.0** — Test suite and fixes: one failing third-party plugin no longer blocks DSAR requests, the consent register or policy generation; DSAR deadline of one calendar month, consistent between table and dashboard; the backup of an overwritten page never becomes the current policy version (consents always point to the published text); no more duplicate privacy pages; DSAR log retention; multisite uninstall; minimum WordPress 6.0.
+
+The full changelog is in the Italian section above.
 
 ### License
 

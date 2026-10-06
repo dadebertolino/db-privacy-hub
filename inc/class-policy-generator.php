@@ -58,9 +58,22 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			 * @param array $sections Array associativo key => html.
 			 * @param array $context  Contesto di rendering.
 			 */
-			$sections = apply_filters( 'dbph_policy_sections', $sections, $context );
+			$filtered = apply_filters( 'dbph_policy_sections', $sections, $context );
+			// 1.8.0: un plugin terzo che restituisce un non-array non deve
+			// bloccare la generazione: si torna alle sezioni dell'Hub.
+			if ( is_array( $filtered ) ) {
+				$sections = $filtered;
+			} else {
+				self::doing_it_wrong( 'dbph_policy_sections' );
+			}
 
-			$html = implode( "\n", array_filter( array_map( 'trim', $sections ) ) );
+			$parts = array();
+			foreach ( $sections as $section ) {
+				if ( is_scalar( $section ) && trim( (string) $section ) !== '' ) {
+					$parts[] = trim( (string) $section );
+				}
+			}
+			$html = implode( "\n", $parts );
 
 			/**
 			 * Filtra l'HTML finale della Privacy Policy.
@@ -68,7 +81,34 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			 * @param string $html
 			 * @param array  $context
 			 */
-			return apply_filters( 'dbph_policy_html', $html, $context );
+			$filtered = apply_filters( 'dbph_policy_html', $html, $context );
+			if ( ! is_string( $filtered ) ) {
+				self::doing_it_wrong( 'dbph_policy_html' );
+				return $html;
+			}
+			return $filtered;
+		}
+
+		/**
+		 * Segnala (con WP_DEBUG) un filtro che ha restituito un tipo errato.
+		 *
+		 * @since 1.8.0
+		 * @param string $hook
+		 */
+		private static function doing_it_wrong( $hook ) {
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				_doing_it_wrong(
+					'DBPH_Policy_Generator::generate',
+					esc_html(
+						sprintf(
+							/* translators: %s: nome del filtro */
+							__( 'Il filtro "%s" ha restituito un tipo non valido: il valore è stato ignorato.', 'db-privacy-hub' ),
+							$hook
+						)
+					),
+					'1.8.0'
+				);
+			}
 		}
 
 		/* =====================================================================
@@ -770,7 +810,8 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 
 		/**
 		 * Converte l'HTML della Privacy Policy in Markdown semplice.
-		 * Supporta: h2-h5, p, strong/em, ul/ol/li, hr, a.
+		 * Supporta: h2-h5, p, strong/b, em/i, code, a, br, hr, blockquote,
+		 * ul/ol/li (anche annidati), table.
 		 *
 		 * @param string $html
 		 * @return string
@@ -779,17 +820,18 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			$md = $html;
 
 			// Headings.
-			$md = preg_replace( '/<h2[^>]*>(.*?)<\/h2>/is', "\n## $1\n", $md );
-			$md = preg_replace( '/<h3[^>]*>(.*?)<\/h3>/is', "\n### $1\n", $md );
-			$md = preg_replace( '/<h4[^>]*>(.*?)<\/h4>/is', "\n#### $1\n", $md );
-			$md = preg_replace( '/<h5[^>]*>(.*?)<\/h5>/is', "\n##### $1\n", $md );
+			$md = preg_replace( '/<h2(?:\s[^>]*)?>(.*?)<\/h2>/is', "\n## $1\n", $md );
+			$md = preg_replace( '/<h3(?:\s[^>]*)?>(.*?)<\/h3>/is', "\n### $1\n", $md );
+			$md = preg_replace( '/<h4(?:\s[^>]*)?>(.*?)<\/h4>/is', "\n#### $1\n", $md );
+			$md = preg_replace( '/<h5(?:\s[^>]*)?>(.*?)<\/h5>/is', "\n##### $1\n", $md );
 
-			// Inline.
-			$md = preg_replace( '/<strong[^>]*>(.*?)<\/strong>/is', '**$1**', $md );
-			$md = preg_replace( '/<b[^>]*>(.*?)<\/b>/is', '**$1**', $md );
-			$md = preg_replace( '/<em[^>]*>(.*?)<\/em>/is', '*$1*', $md );
-			$md = preg_replace( '/<i[^>]*>(.*?)<\/i>/is', '*$1*', $md );
-			$md = preg_replace( '/<code[^>]*>(.*?)<\/code>/is', '`$1`', $md );
+			// Inline. 1.8.0: i nomi dei tag sono delimitati (`<b>` ma non
+			// `<br>`/`<blockquote>`, `<i>` ma non `<img>`/`<iframe>`).
+			$md = preg_replace( '/<strong(?:\s[^>]*)?>(.*?)<\/strong>/is', '**$1**', $md );
+			$md = preg_replace( '/<b(?:\s[^>]*)?>(.*?)<\/b>/is', '**$1**', $md );
+			$md = preg_replace( '/<em(?:\s[^>]*)?>(.*?)<\/em>/is', '*$1*', $md );
+			$md = preg_replace( '/<i(?:\s[^>]*)?>(.*?)<\/i>/is', '*$1*', $md );
+			$md = preg_replace( '/<code(?:\s[^>]*)?>(.*?)<\/code>/is', '`$1`', $md );
 
 			// Links.
 			$md = preg_replace( '/<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is', '[$2]($1)', $md );
@@ -798,13 +840,22 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			$md = preg_replace( '/<br\s*\/?>/i', "\n", $md );
 			$md = preg_replace( '/<hr\s*\/?>/i', "\n---\n", $md );
 
-			// Lists: li → "- ", ul/ol vengono rimossi (la struttura linea-per-linea
-			// è sufficiente per markdown semplice).
-			$md = preg_replace( '/<li[^>]*>(.*?)<\/li>/is', "- $1\n", $md );
-			$md = preg_replace( '/<\/?(ul|ol)[^>]*>/i', "\n", $md );
+			// Citazioni: ogni riga preceduta da "> ".
+			$md = preg_replace_callback(
+				'/<blockquote(?:\s[^>]*)?>(.*?)<\/blockquote>/is',
+				function ( $m ) {
+					$text = trim( wp_strip_all_tags( preg_replace( '/<\/p>\s*<p(?:\s[^>]*)?>/i', "\n\n", $m[1] ) ) );
+					return "\n" . preg_replace( '/^/m', '> ', $text ) . "\n";
+				},
+				$md
+			);
+
+			// Liste. 1.8.0: le liste annidate sono indentate (2 spazi per
+			// livello) e le <ol> numerate, invece di essere appiattite.
+			$md = self::lists_to_markdown( $md );
 
 			// Paragraphs.
-			$md = preg_replace( '/<p[^>]*>(.*?)<\/p>/is', "\n$1\n", $md );
+			$md = preg_replace( '/<p(?:\s[^>]*)?>(.*?)<\/p>/is', "\n$1\n", $md );
 
 			// Tabelle (semplice fallback: pipe separator).
 			$md = preg_replace_callback(
@@ -844,10 +895,54 @@ if ( ! class_exists( 'DBPH_Policy_Generator' ) ) {
 			$md = html_entity_decode( $md, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 
 			// Normalizza whitespace.
+			$md = preg_replace( '/[ \t]+$/m', '', $md );
 			$md = preg_replace( "/\n{3,}/", "\n\n", $md );
 			$md = trim( $md );
 
 			return $md;
+		}
+
+		/**
+		 * Converte <ul>/<ol>/<li> in elenchi Markdown, rispettando
+		 * l'annidamento.
+		 *
+		 * @since 1.8.0
+		 * @param string $html
+		 * @return string
+		 */
+		private static function lists_to_markdown( $html ) {
+			$stack = array(); // Un elemento per lista aperta: ['type' => ul|ol, 'n' => int].
+			return preg_replace_callback(
+				'/\s*<(\/?)(ul|ol|li)(?:\s[^>]*)?>\s*/i',
+				function ( $m ) use ( &$stack ) {
+					$closing = $m[1] === '/';
+					$tag     = strtolower( $m[2] );
+					if ( $tag === 'ul' || $tag === 'ol' ) {
+						if ( $closing ) {
+							array_pop( $stack );
+							return empty( $stack ) ? "\n\n" : '';
+						}
+						$stack[] = array(
+							'type' => $tag,
+							'n'    => 0,
+						);
+						return count( $stack ) === 1 ? "\n\n" : '';
+					}
+					if ( $closing ) {
+						return '';
+					}
+					// <li>: fuori da una lista (HTML malformato) vale come <ul>.
+					$depth = max( 1, count( $stack ) );
+					$top   = empty( $stack ) ? null : count( $stack ) - 1;
+					$mark  = '- ';
+					if ( null !== $top && $stack[ $top ]['type'] === 'ol' ) {
+						++$stack[ $top ]['n'];
+						$mark = $stack[ $top ]['n'] . '. ';
+					}
+					return "\n" . str_repeat( '  ', $depth - 1 ) . $mark;
+				},
+				$html
+			);
 		}
 	}
 }

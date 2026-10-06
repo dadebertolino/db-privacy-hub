@@ -47,26 +47,31 @@ Priorità: **A** = dati legali o crash, **B** = dati errati in admin,
 | # | Pri. | Dove | Problema | Test che lo prova |
 |---|---|---|---|---|
 | 1 ✅ | A | `class-dsar-log.php:370` | Legge `$request->date_created_gmt`, che su `WP_User_Request` non esiste (è `created_timestamp`). Warning PHP 8 a ogni conferma; `requested_at` diventa "adesso" → il termine GDPR di 30 giorni parte dalla conferma, non dalla richiesta. | Integration: richiesta creata 5 giorni fa, confermata oggi → `requested_at` = data di creazione. |
-| 2 | A | `class-policy-generator.php:63` | Un filtro `dbph_policy_sections` che restituisce un non-array → fatal in `array_map`; `dbph_policy_html` non è controllato. Un plugin terzo blocca la generazione. | Unit: filtro che restituisce `null`/stringa → policy generata comunque. |
-| 3 | A | `class-dsar.php`, `class-consents-register.php` | Le eccezioni dei callback DSAR/consensi di altri plugin non sono intercettate: un plugin rotto blocca la richiesta degli altri (contro quanto promette il README). | Unit/integration: un exporter che lancia eccezione, gli altri rispondono. |
+| 2 ✅ | A | `class-policy-generator.php:63` | Un filtro `dbph_policy_sections` che restituisce un non-array → fatal in `array_map`; `dbph_policy_html` non è controllato. Un plugin terzo blocca la generazione. | Unit: filtro che restituisce `null`/stringa → policy generata comunque. |
+| 3 ✅ | A | `class-dsar.php`, `class-consents-register.php` | Le eccezioni dei callback DSAR/consensi di altri plugin non sono intercettate: un plugin rotto blocca la richiesta degli altri (contro quanto promette il README). | Unit/integration: un exporter che lancia eccezione, gli altri rispondono. |
 | 4 | A | `class-admin.php:800` (`do_overwrite_page`) | Il backup pre-sovrascrittura viene salvato come versione e diventa per un momento `dbph_policy_current_version`: un consenso registrato in quell'istante punta a un testo sbagliato. | Integration: dopo la sovrascrittura, la versione corrente è quella pubblicata e il backup è marcato come tale. |
 | 5 | B | `class-dsar-log.php:621` (`get_stats`) | Cancellazione `partial` contata come pendente; `expired` e `rejected` contati come aperti; tipi art. 16–22 esclusi. Il cruscotto sovrastima le richieste pendenti. | Unit/integration su un set di righe con tutti gli stati. |
-| 6 | B | `get_stats` vs `calculate_deadline` | Scadenza calcolata in SQL (`INTERVAL 30 DAY`) e in PHP (giorni arrotondati): ai bordi badge e contatori non coincidono. | Unit: richiesta a 29, 30, 31 giorni. |
+| 6 ✅ | B | `get_stats` vs `calculate_deadline` | Scadenza calcolata in SQL (`INTERVAL 30 DAY`) e in PHP (giorni arrotondati): ai bordi badge e contatori non coincidono. | Unit: richiesta a 29, 30, 31 giorni. |
 | 7 | B | `class-admin.php` (`do_create_new_page`) | "Nuova pagina" ripetuto crea pagine duplicate (`-2`, `-3`) invece di riusare `dbph_page_id`. | E2E: due pubblicazioni → una sola pagina privacy. |
 | 8 | B | `class-admin.php:1136-1149` | Avviso di conferma DSAR manuale mostrato due volte; `sanitize_key($_GET[...])` senza `wp_unslash` (anche 1739, 1906). | E2E: un solo avviso. |
-| 9 | B | `class-responsabili.php:201` | Modelli aggiunti con `dbph_responsabili_templates` non compaiono nel menu (etichette fisse). | Unit + E2E. |
-| 10 | B | `class-responsabili.php:93` | Id generato da `microtime`: un responsabile senza id ne riceve uno diverso a ogni lettura. | Unit: due letture → stesso id. |
-| 11 | C | `class-admin.php:1863` | `mb_substr` su `consent_text` non stringa → TypeError; `esc_html` su valori non scalari → "Array" nel testo. | Unit sui contratti con dati malformati. |
-| 12 | C | `html_to_markdown()` | Le regex `<b…>`/`<i…>` catturano anche `<br>`, `<blockquote>`, `<img>`, `<iframe>`; liste annidate appiattite. | Unit con casi dedicati. |
-| 13 | C | `class-dsar-log.php` (`mask_email`) | `substr`/`strlen` a byte: email con caratteri multibyte mascherate male. | Unit. |
+| 9 ✅ | B | `class-responsabili.php:201` | Modelli aggiunti con `dbph_responsabili_templates` non compaiono nel menu (etichette fisse). | Unit + E2E. |
+| 10 ✅ | B | `class-responsabili.php:93` | Id generato da `microtime`: un responsabile senza id ne riceve uno diverso a ogni lettura. | Unit: due letture → stesso id. |
+| 11 ✅ | C | `class-admin.php:1863` | `mb_substr` su `consent_text` non stringa → TypeError; `esc_html` su valori non scalari → "Array" nel testo. | Unit sui contratti con dati malformati. |
+| 12 ✅ | C | `html_to_markdown()` | Le regex `<b…>`/`<i…>` catturano anche `<br>`, `<blockquote>`, `<img>`, `<iframe>`; liste annidate appiattite. | Unit con casi dedicati. |
+| 13 ✅ | C | `class-dsar-log.php` (`mask_email`) | `substr`/`strlen` a byte: email con caratteri multibyte mascherate male. | Unit. |
 | 14 | C | `uninstall.php` | Niente ciclo multisite; non rimuove il transient dell'updater. | Integration. |
-| 15 | C | `class-updater.php` | `post_install` attiva il plugin anche se era disattivato; `zipball_url` letto senza controllo. Stesso codice condiviso con gli altri plugin DB: correggere ovunque. | Unit. |
-| 16 | C | `class-embed-bridge.php` | Cache della scansione invalidata a ogni `save_post` (revisioni, autosalvataggi, ordini Woo); pattern `output=embed` attribuisce a Google Maps qualunque embed. Piattaforme dal filtro senza `patterns`/`blocks`/`label` → warning. | Unit + integration. |
-| 17 | C | Fusi orari | Archivio in ora MySQL, log DSAR in ora WordPress; `strtotime` presuppone fuso PHP UTC. | Unit con fuso diverso. |
+| 15 ⏸ | C | `class-updater.php` | `post_install` attiva il plugin anche se era disattivato; `zipball_url` letto senza controllo. Stesso codice condiviso con gli altri plugin DB: correggere ovunque. | Unit. |
+| 16 ✅ | C | `class-embed-bridge.php` | Cache della scansione invalidata a ogni `save_post` (revisioni, autosalvataggi, ordini Woo); pattern `output=embed` attribuisce a Google Maps qualunque embed. Piattaforme dal filtro senza `patterns`/`blocks`/`label` → warning. | Unit + integration. |
+| 17 ½ | C | Fusi orari | Archivio in ora MySQL, log DSAR in ora WordPress; `strtotime` presuppone fuso PHP UTC. | Unit con fuso diverso. |
 | 18 | C | `languages/` | Cartella assente ma caricata da `load_plugin_textdomain`. | — |
 | 19 | C | Testo policy | La policy dice "entro un mese", il codice usa 30 giorni. Allineare il testo o il calcolo. | — |
 
 Nessuna SQL injection trovata; nonce e capability presenti su ogni handler.
+
+Legenda: ✅ corretto con test · ½ corretto in parte (17: scadenze DSAR;
+restano archivio e log in fusi diversi, Fase 2) · ⏸ rinviato (15: codice
+condiviso da tutti i plugin DB, va corretto in un passaggio dedicato su tutti
+i repository).
 
 ---
 
@@ -109,34 +114,38 @@ nomi:
 - [x] Requisito WordPress 6.0 (decisione §7): header, controllo
       all'attivazione, `phpcs.xml.dist`, README, changelog (voce "Non rilasciata").
 
-## 4. Fase 1 — Unit test (stima 80–100)
+## 4. Fase 1 — Unit test (168 test, 2026-10-06)
 
-- [ ] **DSAR router**: `normalize_export_response`, `normalize_erase_response`
-      (tutte le forme: dati non array, `done` mancante, liste piatte, non-array);
-      registrazione con callback non callable, chiavi vuote, chiavi in
-      collisione, etichetta di ripiego.
-- [ ] **Registro trattamenti**: `collect()` con voci non array, filtro che
-      restituisce `null`/scalare, `count_by_source()`.
-- [ ] **Alias legacy**: unione `dbseo_processing_register`, dedup per `id`,
-      ricorsione evitata, voci senza `id` scartate.
-- [ ] **Responsabili**: `sanitize_entry` (campi, URL, `extra_ue`), salvataggio
-      che scarta voci senza nome, modelli e etichette (bug 9, 10).
-- [ ] **Archivio policy**: `normalize_for_compare` (data, spazi).
-- [ ] **Generatore**: sezioni e ordine; numerazione con e senza sezione
-      cookie; titolare non configurato; destinatari (dedup per nome,
-      esclusione dei responsabili dichiarati, voci malformate); paragrafo DSAR
-      con `has_db_dsar`; filtri `dbph_policy_sections` / `_html` malformati
-      (bug 2).
-- [ ] **Markdown**: `html_to_markdown` su titoli, liste, tabelle, link,
-      grassetto/corsivo, `<br>`/`<blockquote>` (bug 12).
-- [ ] **Log DSAR**: `calculate_deadline` (ok, in scadenza, scaduto, ai
-      bordi), `mask_email` (multibyte), `hash_email`, tipi/stati/canali.
-- [ ] **CSV**: protezione formula injection (`csv_row`), `sanitize_ymd`.
-- [ ] **Consensi**: `get_sources` (scarti, collisioni), `query_all`
-      (ordinamento, limite, sorgente singola), callback che lanciano (bug 3).
-- [ ] **Bridge Woo**: mappa gateway, gateway offline esclusi, sezione diritti.
-- [ ] **Bridge embed**: catalogo piattaforme, piattaforme manuali, piattaforme
-      malformate dal filtro, rilevamento pixel.
+- [x] **DSAR router** (`DsarRouterTest`): `normalize_export_response`,
+      `normalize_erase_response` (tutte le forme), registrazione con callback
+      non callable, chiavi vuote, etichetta di ripiego; callback che lanciano
+      (bug 3).
+- [x] **Registro trattamenti e alias legacy** (`RegisterTest`): voci non
+      array, filtro che restituisce `null`/scalare, cache, `count_by_source()`;
+      unione `dbseo_processing_register`, dedup per `id`, ricorsione evitata.
+- [x] **Responsabili** (`ResponsabiliTest`): `sanitize_entry`, salvataggio,
+      id stabili e univoci (bug 10), modelli dal filtro nel menu (bug 9).
+- [x] **Archivio policy** (`PolicyArchiveTest`): `normalize_for_compare`.
+- [x] **Generatore** (`PolicyGeneratorTest`): sezioni e numerazione con e
+      senza sezione cookie, titolare, trattamenti, destinatari (dedup,
+      responsabili dichiarati, voci malformate), paragrafo DSAR, filtri
+      malformati (bug 2).
+- [x] **Markdown** (`MarkdownTest`): titoli, inline, link, liste annidate e
+      numerate, tabelle, `<br>`/`<blockquote>`/`<img>` (bug 12).
+- [x] **Log DSAR** (`DsarLogTest`): `calculate_deadline` ai bordi e con fuso
+      PHP diverso (bug 6, 17), `mask_email` multibyte (bug 13), `hash_email`,
+      tipi/stati/canali.
+- [x] **CSV** (`AdminCsvTest`): formula injection (`csv_row`), `sanitize_ymd`.
+- [x] **Consensi** (`ConsentsRegisterTest`): `get_sources`, `query_all`
+      (ordinamento, limite, sorgente singola), righe malformate (bug 11),
+      fonti che lanciano (bug 3).
+- [x] **Bridge Woo** (`WooBridgeTest`): trattamenti condizionali, gateway noti
+      e sconosciuti, offline esclusi, sezione diritti.
+- [x] **Bridge embed** (`EmbedBridgeTest`): catalogo, piattaforme dal filtro
+      (bug 16), pattern LIKE, cache di scansione, manuali, pixel.
+
+Verifica della regola §8: con i sorgenti di `main` falliscono i test di
+tutti i bug corretti in questa fase.
 
 ## 5. Fase 2 — Integration test (stima 40–50)
 

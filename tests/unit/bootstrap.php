@@ -30,6 +30,12 @@ if ( ! defined( 'DBPH_DIR' ) ) {
 if ( ! defined( 'DBPH_VERSION' ) ) {
 	define( 'DBPH_VERSION', 'test' );
 }
+// Con WP_DEBUG i moduli segnalano i contratti violati con _doing_it_wrong,
+// che lo stub registra in $GLOBALS['__dbph_doing_it_wrong']: i test possono
+// verificare che il plugin da correggere venga indicato.
+if ( ! defined( 'WP_DEBUG' ) ) {
+	define( 'WP_DEBUG', true );
+}
 if ( ! defined( 'DBPH_TEXT_DOMAIN' ) ) {
 	define( 'DBPH_TEXT_DOMAIN', 'db-privacy-hub' );
 }
@@ -234,14 +240,20 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 }
 if ( ! function_exists( 'sanitize_text_field' ) ) {
 	function sanitize_text_field( $str ) {
-		$str = strip_tags( (string) $str );
+		if ( is_array( $str ) || is_object( $str ) ) {
+			return '';
+		}
+		$str = wp_strip_all_tags( (string) $str );
 		$str = preg_replace( '/[\r\n\t ]+/', ' ', $str );
 		return trim( $str );
 	}
 }
 if ( ! function_exists( 'sanitize_textarea_field' ) ) {
 	function sanitize_textarea_field( $str ) {
-		return trim( strip_tags( (string) $str ) );
+		if ( is_array( $str ) || is_object( $str ) ) {
+			return '';
+		}
+		return wp_strip_all_tags( (string) $str );
 	}
 }
 if ( ! function_exists( 'sanitize_email' ) ) {
@@ -389,6 +401,76 @@ if ( ! function_exists( 'is_plugin_active' ) ) {
 	}
 }
 
+/* --- Post e tipi di contenuto (store minimale) ----------------------------- */
+
+$GLOBALS['__dbph_posts']      = array();
+$GLOBALS['__dbph_post_types'] = array( 'post', 'page' );
+
+if ( ! function_exists( 'post_type_exists' ) ) {
+	function post_type_exists( $type ) {
+		return in_array( $type, $GLOBALS['__dbph_post_types'], true );
+	}
+}
+if ( ! function_exists( 'get_post_types' ) ) {
+	function get_post_types( $args = array() ) {
+		return array_combine( $GLOBALS['__dbph_post_types'], $GLOBALS['__dbph_post_types'] );
+	}
+}
+if ( ! function_exists( 'get_post' ) ) {
+	function get_post( $id ) {
+		return isset( $GLOBALS['__dbph_posts'][ (int) $id ] ) ? $GLOBALS['__dbph_posts'][ (int) $id ] : null;
+	}
+}
+if ( ! function_exists( 'get_posts' ) ) {
+	function get_posts( $args = array() ) {
+		return array();
+	}
+}
+if ( ! function_exists( 'get_post_meta' ) ) {
+	function get_post_meta( $id, $key = '', $single = false ) {
+		return $single ? '' : array();
+	}
+}
+if ( ! function_exists( 'wp_is_post_revision' ) ) {
+	function wp_is_post_revision( $id ) {
+		$post = get_post( $id );
+		return $post && 'revision' === $post->post_type && false === strpos( $post->post_name, 'autosave' ) ? (int) $post->post_parent : false;
+	}
+}
+if ( ! function_exists( 'wp_is_post_autosave' ) ) {
+	function wp_is_post_autosave( $id ) {
+		$post = get_post( $id );
+		return $post && 'revision' === $post->post_type && false !== strpos( $post->post_name, 'autosave' ) ? (int) $post->post_parent : false;
+	}
+}
+if ( ! function_exists( 'esc_sql' ) ) {
+	function esc_sql( $data ) {
+		return is_array( $data ) ? array_map( 'esc_sql', $data ) : addslashes( (string) $data );
+	}
+}
+
+/**
+ * Registra un post finto nello store (get_post, revisioni, autosalvataggi).
+ *
+ * @param int   $id
+ * @param array $fields post_type, post_status, post_name, post_parent.
+ * @return object
+ */
+function dbph_test_add_post( $id, array $fields = array() ) {
+	$post = (object) array_merge(
+		array(
+			'ID'          => (int) $id,
+			'post_type'   => 'post',
+			'post_status' => 'publish',
+			'post_name'   => 'post-' . $id,
+			'post_parent' => 0,
+		),
+		$fields
+	);
+	$GLOBALS['__dbph_posts'][ (int) $id ] = $post;
+	return $post;
+}
+
 /* -----------------------------------------------------------------------------
  * Helper per i test.
  * -------------------------------------------------------------------------- */
@@ -403,6 +485,8 @@ function dbph_test_reset() {
 	$GLOBALS['__dbph_filters']        = array();
 	$GLOBALS['__dbph_doing_it_wrong'] = array();
 	$GLOBALS['__dbph_is_admin']       = false;
+	$GLOBALS['__dbph_posts']          = array();
+	$GLOBALS['__dbph_post_types']     = array( 'post', 'page' );
 
 	// Cache "per request" delle classi: in produzione durano una richiesta,
 	// qui vanno svuotate a ogni test.

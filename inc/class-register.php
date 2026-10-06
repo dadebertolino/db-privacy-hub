@@ -57,17 +57,21 @@ if ( ! class_exists( 'DBPH_Register' ) ) {
 				return self::$cache;
 			}
 
-			$register = (array) apply_filters( 'dbph_processing_register', array() );
+			$filtered = apply_filters( 'dbph_processing_register', array() );
 
 			// Annota la sorgente. Plugin che vogliono dichiarare la sorgente
 			// in modo esplicito possono valorizzare _source da soli.
-			foreach ( $register as $key => $entry ) {
+			// 1.8.0: le voci non array (e un filtro che restituisce null o uno
+			// scalare) vengono scartate qui, una volta per tutti i consumatori.
+			$register = array();
+			foreach ( is_array( $filtered ) ? $filtered : array() as $entry ) {
 				if ( ! is_array( $entry ) ) {
 					continue;
 				}
-				if ( ! isset( $register[ $key ]['_source'] ) ) {
-					$register[ $key ]['_source'] = 'external';
+				if ( ! isset( $entry['_source'] ) ) {
+					$entry['_source'] = 'external';
 				}
+				$register[] = $entry;
 			}
 
 			self::$cache = $register;
